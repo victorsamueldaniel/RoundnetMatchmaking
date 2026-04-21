@@ -1,0 +1,48 @@
+# OS / filesystem noise
+Desktop.ini
+Thumbs.db
+.DS_Store
+
+# Python cache / bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE / editor
+.vscode/
+.idea/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Build and packaging artifacts (PyInstaller)
+ui/build/
+ui/dist/
+ui/OLD_dist/
+ui/*.spec
+
+# Runtime outputs
+ui/sessions/
+xlsx/xlsx_config.json
+
+# Misc generated archives/logs
+*.log
+*.tmp
+*.bak
+*.zip
