@@ -14,6 +14,7 @@ SCRIPT_TESTS = [
     Path("tests/test_post_processing.py"),
     Path("tests/test_pickle.py"),
     Path("tests/tests_fine_tuning.py"),
+    Path("tests/test_session_diagram_sync.py"),
 ]
 
 

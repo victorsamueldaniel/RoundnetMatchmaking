@@ -1,0 +1,784 @@
+{
+  "meta": {
+    "title": "Session Creation Diagram",
+    "description": "Dynamic call flow and data model for session creation and persistence.",
+    "source_of_truth": "docs/diagrams/session_creation/session_diagram_registry.json"
+  },
+  "layers": [
+    {
+      "id": "ui",
+      "label": "UI"
+    },
+    {
+      "id": "core",
+      "label": "Core Orchestration"
+    },
+    {
+      "id": "model",
+      "label": "Domain Models"
+    },
+    {
+      "id": "output",
+      "label": "Persistence and Output"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "ui.run_session",
+      "label": "PlayerSelectionUI.run_session",
+      "layer": "ui",
+      "file": "ui/player_selection_ui.py",
+      "line": 4686,
+      "parameters": [
+        "selected_players",
+        "type_preferences",
+        "gender_preferences",
+        "games_per_round",
+        "level_gap_tol",
+        "lambda_weight",
+        "spectrum_enabled",
+        "preferred_pairs"
+      ],
+      "notes": "Collects UI state, applies temporary player overrides, and prepares sub_df."
+    },
+    {
+      "id": "ui.run_generation_with_progress",
+      "label": "PlayerSelectionUI.run_generation_with_progress",
+      "layer": "ui",
+      "file": "ui/player_selection_ui.py",
+      "line": 4802,
+      "parameters": [
+        "sub_df",
+        "amount_of_rounds",
+        "type_preferences",
+        "gender_preferences",
+        "first_seed",
+        "last_seed",
+        "games_per_round",
+        "level_gap_tol",
+        "lambda_weight",
+        "spectrum_enabled",
+        "preferred_pairs"
+      ],
+      "notes": "Builds rounds_reordering and invokes core generation with progress callback."
+    },
+    {
+      "id": "core.seed_optimization",
+      "label": "run_session_generation_with_seed_optimization",
+      "layer": "core",
+      "file": "core/algorithm.py",
+      "line": 13,
+      "parameters": [
+        "df",
+        "amount_of_rounds",
+        "type_preferences",
+        "gender_preferences",
+        "rounds_reordering",
+        "level_gap_tol",
+        "num_iter",
+        "lambda_weight",
+        "weight_same_teammate",
+        "first_seed",
+        "last_seed",
+        "spectrum",
+        "games_per_round_each_round",
+        "progress_callback"
+      ],
+      "notes": "Runs seed loop and chooses the best scoring valid session."
+    },
+    {
+      "id": "model.session_init",
+      "label": "SessionOfRounds.__init__",
+      "layer": "model",
+      "file": "core/models.py",
+      "line": 1473,
+      "parameters": [
+        "list_of_players",
+        "amount_of_rounds",
+        "games_per_round_each_round",
+        "type_preferences",
+        "gender_preferences",
+        "rounds_reordering",
+        "level_gap_tol",
+        "num_iter",
+        "spectrum",
+        "objective_function",
+        "weight_same_teammate",
+        "seed"
+      ],
+      "notes": "Normalizes preferences and triggers round creation."
+    },
+    {
+      "id": "model.create_rounds",
+      "label": "SessionOfRounds.create_rounds",
+      "layer": "model",
+      "file": "core/models.py",
+      "line": 1706,
+      "parameters": [
+        "seed"
+      ],
+      "notes": "Creates each GamesRound and computes session-level happiness stats."
+    },
+    {
+      "id": "model.games_round_init",
+      "label": "GamesRound.__init__",
+      "layer": "model",
+      "file": "core/models.py",
+      "line": 450,
+      "parameters": [
+        "list_of_players",
+        "previous_games_rounds_anti_chron",
+        "amount_of_games",
+        "type_preference",
+        "gender_preference",
+        "num_iter",
+        "level_gap_tol",
+        "objective_function",
+        "weight_same_teammate",
+        "seed",
+        "spectrum"
+      ],
+      "notes": "Initializes round state and dispatches game creation."
+    },
+    {
+      "id": "model.create_games",
+      "label": "GamesRound.create_games",
+      "layer": "model",
+      "file": "core/models.py",
+      "line": 671,
+      "parameters": [
+        "seed"
+      ],
+      "notes": "Routes to balanced or level strategy and tracks per-player history."
+    },
+    {
+      "id": "model.create_balanced",
+      "label": "GamesRound.create_all_balanced_games",
+      "layer": "model",
+      "file": "core/models.py",
+      "line": 735,
+      "parameters": [
+        "people_playing",
+        "level_gap_tol",
+        "spectrum",
+        "objective_function",
+        "seed"
+      ],
+      "notes": "Scores candidate game combinations and picks the best one."
+    },
+    {
+      "id": "model.create_by_level",
+      "label": "GamesRound.create_games_by_level",
+      "layer": "model",
+      "file": "core/models.py",
+      "line": 999,
+      "parameters": [
+        "alternate",
+        "seed"
+      ],
+      "notes": "Builds level-grouped games and enforces best-available gender pairing."
+    },
+    {
+      "id": "model.update_happiness",
+      "label": "GameOfFour.update_players_happiness",
+      "layer": "model",
+      "file": "core/models.py",
+      "line": 367,
+      "parameters": [
+        "session_median_level",
+        "level_gap_tol",
+        "spectrum",
+        "type_preference",
+        "gender_preference",
+        "never_met_bonus_per_player",
+        "never_met_bonus_cap"
+      ],
+      "notes": "Applies penalties and bonuses, then updates player happiness."
+    },
+    {
+      "id": "core.force_pairs",
+      "label": "force_preferred_pairs_in_session",
+      "layer": "core",
+      "file": "core/algorithm.py",
+      "line": 315,
+      "parameters": [
+        "session",
+        "preferred_pairs",
+        "forced_games",
+        "lambda_weight",
+        "score_tolerance"
+      ],
+      "notes": "Optional post-processing to enforce preferred teammates."
+    },
+    {
+      "id": "output.save_session_of_rounds",
+      "label": "SessionOfRounds.save_session_of_rounds",
+      "layer": "output",
+      "file": "core/models.py",
+      "line": 2633,
+      "parameters": [
+        "date_str",
+        "main_folder",
+        "export_to_excel",
+        "create_plots"
+      ],
+      "notes": "Creates session folder and dispatches serialization and exports."
+    },
+    {
+      "id": "output.save_pickle",
+      "label": "save_session",
+      "layer": "output",
+      "file": "core/pickle_helper.py",
+      "line": 13,
+      "parameters": [
+        "session_of_rounds",
+        "folder",
+        "filename"
+      ],
+      "notes": "Writes pickle snapshot using highest protocol."
+    },
+    {
+      "id": "output.export_excel",
+      "label": "SessionOfRounds.export_to_excel",
+      "layer": "output",
+      "file": "core/models.py",
+      "line": 2283,
+      "parameters": [
+        "directory",
+        "date_str",
+        "filename",
+        "create_read_only"
+      ],
+      "notes": "Exports games and statistics workbook plus read-only variant."
+    },
+    {
+      "id": "output.create_charts",
+      "label": "create_all_session_charts",
+      "layer": "output",
+      "file": "core/charts.py",
+      "line": 867,
+      "parameters": [
+        "session_of_rounds",
+        "save_png",
+        "png_dir"
+      ],
+      "notes": "Generates happiness, team, and spectrum charts."
+    },
+    {
+      "id": "output.create_session_png",
+      "label": "create_session_games_png",
+      "layer": "output",
+      "file": "core/charts.py",
+      "line": 917,
+      "parameters": [
+        "session_of_rounds",
+        "save_path",
+        "show_levels"
+      ],
+      "notes": "Renders a round-by-round session overview image for UI display."
+    }
+  ],
+  "edges": [
+    {
+      "from": "ui.run_session",
+      "to": "ui.run_generation_with_progress",
+      "label": "calls"
+    },
+    {
+      "from": "ui.run_generation_with_progress",
+      "to": "core.seed_optimization",
+      "label": "calls with rounds_reordering + callback"
+    },
+    {
+      "from": "core.seed_optimization",
+      "to": "model.session_init",
+      "label": "per seed"
+    },
+    {
+      "from": "model.session_init",
+      "to": "model.create_rounds",
+      "label": "initializes rounds"
+    },
+    {
+      "from": "model.create_rounds",
+      "to": "model.games_round_init",
+      "label": "for each round"
+    },
+    {
+      "from": "model.games_round_init",
+      "to": "model.create_games",
+      "label": "dispatch"
+    },
+    {
+      "from": "model.create_games",
+      "to": "model.create_balanced",
+      "label": "type=balanced"
+    },
+    {
+      "from": "model.create_games",
+      "to": "model.create_by_level",
+      "label": "type=level"
+    },
+    {
+      "from": "model.create_balanced",
+      "to": "model.update_happiness",
+      "label": "scores each candidate"
+    },
+    {
+      "from": "model.create_by_level",
+      "to": "model.update_happiness",
+      "label": "updates selected games"
+    },
+    {
+      "from": "ui.run_generation_with_progress",
+      "to": "core.force_pairs",
+      "label": "optional if preferred_pairs"
+    },
+    {
+      "from": "ui.run_generation_with_progress",
+      "to": "output.save_session_of_rounds",
+      "label": "save generated session"
+    },
+    {
+      "from": "output.save_session_of_rounds",
+      "to": "output.save_pickle",
+      "label": "always"
+    },
+    {
+      "from": "output.save_session_of_rounds",
+      "to": "output.export_excel",
+      "label": "if export_to_excel"
+    },
+    {
+      "from": "output.save_session_of_rounds",
+      "to": "output.create_charts",
+      "label": "if create_plots"
+    },
+    {
+      "from": "ui.run_generation_with_progress",
+      "to": "output.create_session_png",
+      "label": "UI preview"
+    }
+  ],
+  "entities": [
+    {
+      "id": "Player",
+      "label": "Player",
+      "kind": "class",
+      "file": "core/models.py",
+      "line": 61,
+      "attributes": [
+        {
+          "type": "string",
+          "name": "name"
+        },
+        {
+          "type": "float",
+          "name": "level"
+        },
+        {
+          "type": "float",
+          "name": "happiness"
+        },
+        {
+          "type": "int",
+          "name": "games_played"
+        }
+      ]
+    },
+    {
+      "id": "TeamOfTwo",
+      "label": "TeamOfTwo",
+      "kind": "class",
+      "file": "core/models.py",
+      "line": 238,
+      "attributes": [
+        {
+          "type": "set",
+          "name": "players"
+        },
+        {
+          "type": "float",
+          "name": "mean_level"
+        },
+        {
+          "type": "bool",
+          "name": "mixed"
+        }
+      ]
+    },
+    {
+      "id": "GameOfFour",
+      "label": "GameOfFour",
+      "kind": "class",
+      "file": "core/models.py",
+      "line": 297,
+      "attributes": [
+        {
+          "type": "TeamOfTwo",
+          "name": "team_A"
+        },
+        {
+          "type": "TeamOfTwo",
+          "name": "team_B"
+        },
+        {
+          "type": "float",
+          "name": "level_difference"
+        }
+      ]
+    },
+    {
+      "id": "GamesRound",
+      "label": "GamesRound",
+      "kind": "class",
+      "file": "core/models.py",
+      "line": 449,
+      "attributes": [
+        {
+          "type": "list",
+          "name": "games"
+        },
+        {
+          "type": "list",
+          "name": "not_playing"
+        },
+        {
+          "type": "list",
+          "name": "iterations"
+        }
+      ]
+    },
+    {
+      "id": "SessionOfRounds",
+      "label": "SessionOfRounds",
+      "kind": "class",
+      "file": "core/models.py",
+      "line": 1470,
+      "attributes": [
+        {
+          "type": "list",
+          "name": "players"
+        },
+        {
+          "type": "list",
+          "name": "rounds"
+        },
+        {
+          "type": "float",
+          "name": "mean_happiness"
+        },
+        {
+          "type": "float",
+          "name": "std_happiness"
+        }
+      ]
+    },
+    {
+      "id": "SessionFolder",
+      "label": "SessionFolder",
+      "kind": "artifact",
+      "file": "core/models.py",
+      "line": 2633,
+      "attributes": [
+        {
+          "type": "path",
+          "name": "sessions/DD_MM_YYYY[_N]"
+        }
+      ]
+    },
+    {
+      "id": "SessionPickle",
+      "label": "SessionPickle",
+      "kind": "artifact",
+      "file": "core/models.py",
+      "line": 2654,
+      "attributes": [
+        {
+          "type": "file",
+          "name": "session_of_rounds_DD_MM_YYYY.pkl"
+        }
+      ]
+    },
+    {
+      "id": "SessionWorkbook",
+      "label": "SessionWorkbook",
+      "kind": "artifact",
+      "file": "core/models.py",
+      "line": 2660,
+      "attributes": [
+        {
+          "type": "file",
+          "name": "session_DD_MM_YYYY.xlsx"
+        }
+      ]
+    },
+    {
+      "id": "PlotsDirectory",
+      "label": "PlotsDirectory",
+      "kind": "artifact",
+      "file": "core/models.py",
+      "line": 2663,
+      "attributes": [
+        {
+          "type": "path",
+          "name": "plots/*.png"
+        }
+      ]
+    },
+    {
+      "id": "SessionGamesPng",
+      "label": "SessionGamesPng",
+      "kind": "artifact",
+      "file": "ui/player_selection_ui.py",
+      "line": 4931,
+      "attributes": [
+        {
+          "type": "file",
+          "name": "session_games.png"
+        }
+      ]
+    }
+  ],
+  "entity_relationships": [
+    {
+      "from": "SessionOfRounds",
+      "to": "GamesRound",
+      "connector": "||--|{",
+      "label": "contains"
+    },
+    {
+      "from": "GamesRound",
+      "to": "GameOfFour",
+      "connector": "||--|{",
+      "label": "schedules"
+    },
+    {
+      "from": "GameOfFour",
+      "to": "TeamOfTwo",
+      "connector": "||--||",
+      "label": "composed_of"
+    },
+    {
+      "from": "TeamOfTwo",
+      "to": "Player",
+      "connector": "}|--||",
+      "label": "pairs"
+    },
+    {
+      "from": "SessionOfRounds",
+      "to": "SessionFolder",
+      "connector": "||--o|",
+      "label": "saved_to"
+    },
+    {
+      "from": "SessionFolder",
+      "to": "SessionPickle",
+      "connector": "||--o|",
+      "label": "contains"
+    },
+    {
+      "from": "SessionFolder",
+      "to": "SessionWorkbook",
+      "connector": "||--o|",
+      "label": "contains"
+    },
+    {
+      "from": "SessionFolder",
+      "to": "PlotsDirectory",
+      "connector": "||--o|",
+      "label": "contains"
+    },
+    {
+      "from": "SessionFolder",
+      "to": "SessionGamesPng",
+      "connector": "||--o|",
+      "label": "contains"
+    }
+  ],
+  "parameter_rows": [
+    {
+      "group": "UI Inputs",
+      "parameter": "amount_of_rounds",
+      "source": "num_rounds_var (UI)",
+      "passed_to": "run_session_generation_with_seed_optimization(amount_of_rounds)",
+      "default": "4",
+      "type": "int",
+      "notes": "Rounds count selected in UI."
+    },
+    {
+      "group": "UI Inputs",
+      "parameter": "type_preferences",
+      "source": "type_prefs[] (UI)",
+      "passed_to": "run_session_generation_with_seed_optimization(type_preferences)",
+      "default": "[balanced, balanced, level, level]",
+      "type": "list[str]",
+      "notes": "Used with rounds_reordering for internal generation order."
+    },
+    {
+      "group": "UI Inputs",
+      "parameter": "gender_preferences",
+      "source": "gender_prefs[] (UI)",
+      "passed_to": "run_session_generation_with_seed_optimization(gender_preferences)",
+      "default": "[open, mixed, mixed, open]",
+      "type": "list[str]",
+      "notes": "Per-round gender constraints."
+    },
+    {
+      "group": "UI Inputs",
+      "parameter": "games_per_round",
+      "source": "games_per_round_var (UI)",
+      "passed_to": "games_per_round_each_round",
+      "default": "auto => len(selected_players) // 4",
+      "type": "int",
+      "notes": "Auto is resolved before core call."
+    },
+    {
+      "group": "UI Inputs",
+      "parameter": "level_gap_tol",
+      "source": "level_gap_tol_var (UI)",
+      "passed_to": "run_session_generation_with_seed_optimization(level_gap_tol)",
+      "default": "1.1",
+      "type": "float",
+      "notes": "Tolerance for acceptable team level gaps."
+    },
+    {
+      "group": "UI Inputs",
+      "parameter": "lambda_weight",
+      "source": "lambda_weight_var (UI)",
+      "passed_to": "run_session_generation_with_seed_optimization(lambda_weight)",
+      "default": "2.4",
+      "type": "float",
+      "notes": "Score objective uses mean - lambda * std."
+    },
+    {
+      "group": "UI Inputs",
+      "parameter": "spectrum_enabled",
+      "source": "spectrum_var (UI)",
+      "passed_to": "run_session_generation_with_seed_optimization(spectrum)",
+      "default": "True",
+      "type": "bool",
+      "notes": "Switches spectrum-based happiness logic."
+    },
+    {
+      "group": "UI Inputs",
+      "parameter": "preferred_pairs",
+      "source": "preferred_pairs (UI dialog)",
+      "passed_to": "force_preferred_pairs_in_session(preferred_pairs)",
+      "default": "[]",
+      "type": "list[tuple[frozenset, int]]",
+      "notes": "Applied only in optional post-processing."
+    },
+    {
+      "group": "Core Orchestration",
+      "parameter": "num_iter",
+      "source": "hardcoded in UI wrapper",
+      "passed_to": "run_session_generation_with_seed_optimization(num_iter)",
+      "default": "435",
+      "type": "int",
+      "notes": "Optimization iteration budget."
+    },
+    {
+      "group": "Core Orchestration",
+      "parameter": "weight_same_teammate",
+      "source": "hardcoded in UI wrapper",
+      "passed_to": "run_session_generation_with_seed_optimization(weight_same_teammate)",
+      "default": "5",
+      "type": "int",
+      "notes": "Penalty for repeated teammates."
+    },
+    {
+      "group": "Core Orchestration",
+      "parameter": "first_seed / last_seed",
+      "source": "hardcoded in UI wrapper",
+      "passed_to": "run_session_generation_with_seed_optimization(first_seed, last_seed)",
+      "default": "0 / 9",
+      "type": "int",
+      "notes": "Seed range used by optimization loop."
+    },
+    {
+      "group": "Persistence",
+      "parameter": "date_str",
+      "source": "save_session_of_rounds default",
+      "passed_to": "session folder and filenames",
+      "default": "datetime.now().strftime('%d_%m_%Y')",
+      "type": "str",
+      "notes": "Date-based folder name with optional numeric suffix."
+    },
+    {
+      "group": "Persistence",
+      "parameter": "main_folder",
+      "source": "save_session_of_rounds default",
+      "passed_to": "os.path.join(main_folder, date_str)",
+      "default": "sessions",
+      "type": "str",
+      "notes": "Base directory for runtime session artifacts."
+    },
+    {
+      "group": "Persistence",
+      "parameter": "export_to_excel",
+      "source": "save_session_of_rounds default",
+      "passed_to": "SessionOfRounds.export_to_excel",
+      "default": "True",
+      "type": "bool",
+      "notes": "Controls workbook generation."
+    },
+    {
+      "group": "Persistence",
+      "parameter": "create_plots",
+      "source": "save_session_of_rounds default",
+      "passed_to": "create_all_session_charts",
+      "default": "True",
+      "type": "bool",
+      "notes": "Controls charts creation under plots directory."
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "Session folder",
+      "path_pattern": "sessions/DD_MM_YYYY[_N]/",
+      "generated_by": "SessionOfRounds.save_session_of_rounds",
+      "notes": "Suffix is added when the date folder already exists."
+    },
+    {
+      "name": "Session pickle",
+      "path_pattern": "sessions/DD_MM_YYYY[_N]/session_of_rounds_DD_MM_YYYY.pkl",
+      "generated_by": "save_session",
+      "notes": "Serialized SessionOfRounds snapshot."
+    },
+    {
+      "name": "Session workbook",
+      "path_pattern": "sessions/DD_MM_YYYY[_N]/session_DD_MM_YYYY.xlsx",
+      "generated_by": "SessionOfRounds.export_to_excel",
+      "notes": "Includes Games, stats, and summary sheets."
+    },
+    {
+      "name": "Read-only workbook",
+      "path_pattern": "sessions/DD_MM_YYYY[_N]/session_DD_MM_YYYY_read_only.xlsx",
+      "generated_by": "SessionOfRounds.export_to_excel",
+      "notes": "Protected workbook variant generated by export."
+    },
+    {
+      "name": "Charts directory",
+      "path_pattern": "sessions/DD_MM_YYYY[_N]/plots/*.png",
+      "generated_by": "create_all_session_charts",
+      "notes": "Happiness, team, and spectrum analysis images."
+    },
+    {
+      "name": "Session games preview",
+      "path_pattern": "sessions/DD_MM_YYYY[_N]/session_games.png",
+      "generated_by": "create_session_games_png",
+      "notes": "UI overview image rendered after session save."
+    }
+  ],
+  "maintenance": {
+    "how_to_add_feature": [
+      "Add or update node entries in nodes.",
+      "Add new call edges in edges.",
+      "Add entity and relationship entries if the feature changes data model or artifacts.",
+      "Add parameter rows for new user or core knobs.",
+      "Run: python docs/diagrams/session_creation/generate_session_diagram.py",
+      "Validate freshness: python docs/diagrams/session_creation/generate_session_diagram.py --check"
+    ]
+  }
+}
