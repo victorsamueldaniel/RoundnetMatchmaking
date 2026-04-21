@@ -52,6 +52,24 @@ from datetime import datetime
 ###############################################################################################
 # NOTE: run_session_generation_with_seed_optimization has been moved to main.py
 # Import it from main: from main import run_session_generation_with_seed_optimization
+run_session_generation_with_seed_optimization = (
+    main.run_session_generation_with_seed_optimization
+)
+
+
+def _show_or_close_plot(plt_module):
+    """Show plots only on interactive backends; close silently on headless ones."""
+    backend = ""
+    try:
+        backend = (plt_module.get_backend() or "").lower()
+    except Exception:
+        backend = ""
+
+    if "agg" in backend:
+        plt_module.close()
+        return
+
+    plt_module.show()
 
 
 # %%
@@ -132,7 +150,7 @@ def plot_parameter_sweep_results(
     )
     plt.grid(True, alpha=0.3, axis="y")
     plt.tight_layout()
-    plt.show()
+    _show_or_close_plot(plt)
 
 
 # %%
@@ -465,7 +483,7 @@ def run_with_random_sample(
         )
         plt.grid(True, alpha=0.3, axis="y")
         plt.tight_layout()
-        plt.show()
+        _show_or_close_plot(plt)
 
     return sample_to_metric_data, all_sessions
 

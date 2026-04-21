@@ -315,14 +315,18 @@ def _try_swap(
 def force_preferred_pairs_in_session(
     session,
     preferred_pairs,
+    forced_games=1,
     lambda_weight=2.4,
     score_tolerance=0.10,
 ):
     """Post-process a generated session to force preferred pairs together.
 
-    *preferred_pairs* is a list of ``(frozenset({name1, name2}), forced_games)``
-    tuples.  For each pair the function attempts to arrange swaps so the two
-    players are teammates in at least *forced_games* rounds.
+    ``preferred_pairs`` accepts two formats:
+      - ``[(frozenset({name1, name2}), forced_games), ...]``
+      - ``[frozenset({name1, name2}), ...]`` (uses ``forced_games`` arg)
+
+    For each pair the function attempts to arrange swaps so the two players are
+    teammates in at least the requested number of rounds.
 
     Constraints respected:
       - No player plays 2+ fewer games than any other (balance).
@@ -337,9 +341,33 @@ def force_preferred_pairs_in_session(
     if not preferred_pairs:
         return
 
+    normalized_pairs = []
+    for pair_entry in preferred_pairs:
+        pair_fs = None
+        pair_forced_games = forced_games
+
+        # Full tuple/list form: (pair, forced_games)
+        if (
+            isinstance(pair_entry, (tuple, list))
+            and len(pair_entry) == 2
+            and isinstance(pair_entry[1], (int, float))
+        ):
+            pair_fs = frozenset(pair_entry[0])
+            pair_forced_games = int(pair_entry[1])
+        else:
+            pair_fs = frozenset(pair_entry)
+
+        if len(pair_fs) != 2:
+            continue
+
+        normalized_pairs.append((pair_fs, max(0, pair_forced_games)))
+
+    if not normalized_pairs:
+        return
+
     base_score = _session_score(session, lambda_weight)
 
-    for pair_fs, forced_games in preferred_pairs:
+    for pair_fs, pair_forced_games in normalized_pairs:
         names = sorted(pair_fs)
         player1 = next((p for p in session.players if p.name == names[0]), None)
         player2 = next((p for p in session.players if p.name == names[1]), None)
@@ -354,7 +382,7 @@ def force_preferred_pairs_in_session(
                 r.find_player_position(player1), r.find_player_position(player2)
             )
         )
-        needed = forced_games - already
+        needed = pair_forced_games - already
         if needed <= 0:
             continue
 

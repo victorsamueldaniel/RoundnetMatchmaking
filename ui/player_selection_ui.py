@@ -2,14 +2,6 @@
 import sys
 import os
 
-# Ensure project root is on sys.path so `ui.ui_helpers` and `core.*` resolve
-# when running as a plain script (not needed in the frozen EXE).
-if not getattr(sys, "frozen", False):
-    # player_selection_ui.py lives in ui/; project root is one level up
-    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if _root not in sys.path:
-        sys.path.insert(0, _root)
-
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext, filedialog
 import importlib
@@ -46,11 +38,8 @@ else:
     )
 _XLSX_CONFIG_PATH = os.path.join(_xlsx_dir, "xlsx_config.json")
 
-# Import validation helper from core (available in both script and frozen contexts).
-try:
-    from core.data_loader import validate_xlsx
-except ImportError:
-    from data_loader import validate_xlsx  # type: ignore
+# Import validation helper from core package.
+from core.data_loader import validate_xlsx
 
 import pandas as pd
 
@@ -606,10 +595,7 @@ def _run_setup_wizard(root):
             if "data_loader" in _k or (_k == "core.main") or (_k == "main"):
                 del _sys.modules[_k]
 
-        try:
-            from core.data_loader import load_data as _load_data  # type: ignore
-        except ImportError:
-            from data_loader import load_data as _load_data  # type: ignore
+        from core.data_loader import load_data as _load_data  # type: ignore
 
         try:
             df = _load_data()
@@ -4934,12 +4920,10 @@ class PlayerSelectionUI:
                         plots_dir = os.path.join(most_recent, "plots")
 
                         # Generate and show the Session Games overview PNG
-                        try:
-                            from core.charts import (
-                                create_session_games_png,
-                            )  # noqa: PLC0415
-                        except ImportError:
-                            from charts import create_session_games_png  # type: ignore
+                        from core.charts import (
+                            create_session_games_png,
+                        )  # noqa: PLC0415
+
                         session_games_png = os.path.join(
                             most_recent, "session_games.png"
                         )
@@ -4980,12 +4964,10 @@ class PlayerSelectionUI:
                                 self.show_games_editor()
                                 self.show_plots_window(plots_dir)
                             # Session Games tab even without plots folder
-                            try:
-                                from core.charts import (
-                                    create_session_games_png,
-                                )  # noqa: PLC0415
-                            except ImportError:
-                                from charts import create_session_games_png  # type: ignore
+                            from core.charts import (
+                                create_session_games_png,
+                            )  # noqa: PLC0415
+
                             session_games_png = os.path.join(
                                 most_recent, "session_games.png"
                             )

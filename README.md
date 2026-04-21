@@ -19,8 +19,18 @@ Roundnet Matchmaking is a Python desktop application that generates balanced ses
    roundnet-matchmaking
    ```
 
+Preferred launch mode:
+- Use the installed command `roundnet-matchmaking`.
+- For development, use module execution from repo root: `python -m ui.player_selection_ui`.
+- Avoid direct file execution (`python ui/player_selection_ui.py`) because it can bypass package import context.
+
 ## Development
-Run tests:
+Run script-based validation (CI baseline):
+```bash
+python tests/run_script_tests.py
+```
+
+Run pytest-native tests (optional while migration is in progress):
 ```bash
 pytest -q
 ```

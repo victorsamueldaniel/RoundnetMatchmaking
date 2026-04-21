@@ -1520,9 +1520,7 @@ class SessionOfRounds:
                 amount_of_rounds - len(type_preferences)
             )
         elif len(type_preferences) > amount_of_rounds:
-            raise ValueError(
-                f"too many type_preferences: got {len(type_preferences)}, expected {amount_of_rounds}"
-            )
+            type_preferences = type_preferences[:amount_of_rounds]
         self.type_preferences = type_preferences
 
         # reformatting gender_preferences to the amount of gender_preferences wanted
@@ -1535,9 +1533,7 @@ class SessionOfRounds:
                 amount_of_rounds - len(gender_preferences)
             )
         elif len(gender_preferences) > amount_of_rounds:
-            raise ValueError(
-                f"too many gender_preferences: got {len(gender_preferences)}, expected {amount_of_rounds}"
-            )
+            gender_preferences = gender_preferences[:amount_of_rounds]
         self.gender_preferences = gender_preferences
 
         # reformatting games_per_round_at_each_round to the amount of rounds wanted

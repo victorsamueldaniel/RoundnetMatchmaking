@@ -8,7 +8,20 @@ version = "0.1.0"
 description = "Desktop roundnet matchmaking and session generation tool"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { file = "LICENSE" }
 authors = [{ name = "RoundnetMatchmaking Maintainers" }]
+keywords = ["roundnet", "matchmaking", "scheduling", "sports"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
 dependencies = [
     "numpy>=1.24.0",
     "pandas>=1.5.0",
@@ -27,9 +40,10 @@ dev = [
     "pytest-cov>=5.0",
     "black>=24.0",
     "flake8>=7.0",
+    "pre-commit>=3.7.0",
 ]
 ui = [
-    "pyinstaller>=5.13.0",
+    "pyinstaller>=5.13.0; platform_system == 'Windows'",
 ]
 
 [project.scripts]
@@ -40,5 +54,9 @@ where = ["."]
 include = ["core*", "ui*"]
 exclude = ["tests*", "archive*", "fusion_xlsx*"]
 
+[tool.setuptools.package-data]
+ui = ["*.png", "*.ico"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-ra"

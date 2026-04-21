@@ -16,6 +16,11 @@ __pycache__/
 .coverage.*
 htmlcov/
 
+# Python packaging artifacts
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
 # Virtual environments
 .venv/
 venv/
@@ -38,6 +43,7 @@ ui/OLD_dist/
 ui/*.spec
 
 # Runtime outputs
+sessions/
 ui/sessions/
 xlsx/xlsx_config.json
 
