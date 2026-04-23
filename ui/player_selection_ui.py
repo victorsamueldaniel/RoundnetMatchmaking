@@ -5045,10 +5045,63 @@ def _show_loading_window(root):
     return splash
 
 
+def _ensure_windows_tcl_env():
+    """Set TCL/TK runtime paths on Windows when Python cannot auto-resolve them."""
+    if os.name != "nt":
+        return
+
+    tcl_env = os.environ.get("TCL_LIBRARY", "").strip()
+    tk_env = os.environ.get("TK_LIBRARY", "").strip()
+    if tcl_env and tk_env:
+        return
+
+    for base_prefix in (getattr(sys, "base_prefix", ""), getattr(sys, "prefix", "")):
+        if not base_prefix:
+            continue
+
+        tcl_root = os.path.join(base_prefix, "tcl")
+        if not os.path.isdir(tcl_root):
+            continue
+
+        try:
+            children = os.listdir(tcl_root)
+        except OSError:
+            continue
+
+        tcl_dirs = sorted(
+            [
+                name
+                for name in children
+                if name.lower().startswith("tcl")
+                and os.path.isdir(os.path.join(tcl_root, name))
+            ],
+            reverse=True,
+        )
+        tk_dirs = sorted(
+            [
+                name
+                for name in children
+                if name.lower().startswith("tk")
+                and os.path.isdir(os.path.join(tcl_root, name))
+            ],
+            reverse=True,
+        )
+
+        if not tcl_dirs or not tk_dirs:
+            continue
+
+        if not tcl_env:
+            os.environ["TCL_LIBRARY"] = os.path.join(tcl_root, tcl_dirs[0])
+        if not tk_env:
+            os.environ["TK_LIBRARY"] = os.path.join(tcl_root, tk_dirs[0])
+        return
+
+
 def main():
     """Main function to run the UI"""
     global main_module, ftf_module
 
+    _ensure_windows_tcl_env()
     root = tk.Tk()
     root.withdraw()  # keep hidden until fully built
 

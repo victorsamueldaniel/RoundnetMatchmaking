@@ -50,6 +50,40 @@ Do not commit generated folders such as:
 - Error example: `ModuleNotFoundError: No module named 'tkinter'`
 - Fix: reinstall Python with Tcl/Tk enabled, then rebuild.
 
+### `TclError: Can't find a usable init.tcl`
+
+- Error example:
+
+```text
+TclError: Can't find a usable init.tcl ...
+This probably means that Tcl wasn't installed properly.
+```
+
+- Cause: the active interpreter cannot locate its Tcl/Tk runtime folders.
+- Fix order:
+  1. Confirm interpreter path: `python -c "import sys; print(sys.executable)"`
+  2. Recreate the venv from a Python installation that includes Tcl/Tk.
+  3. Reinstall project dependencies: `python -m pip install -e ".[dev,ui]"`
+  4. Validate tkinter in that shell:
+     `python -c "import tkinter as tk; r = tk.Tk(); r.destroy(); print('tk ok')"`
+
+- Optional temporary workaround before launch (PowerShell):
+
+```powershell
+$env:TCL_LIBRARY = "C:\Path\To\Python\tcl\tcl8.6"
+$env:TK_LIBRARY  = "C:\Path\To\Python\tcl\tk8.6"
+```
+
+### Using notebooks with a venv (optional)
+
+If you run project scripts from notebooks, install and register the kernel from
+the same virtual environment:
+
+```bash
+python -m pip install ipykernel
+python -m ipykernel install --user --name roundnet-matchmaking --display-name "Python (RoundnetMatchmaking)"
+```
+
 ### Build fails because of missing packages
 
 - Reinstall extras:

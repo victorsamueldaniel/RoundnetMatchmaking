@@ -19,10 +19,59 @@ Roundnet Matchmaking is a Python desktop application that generates balanced ses
    roundnet-matchmaking
    ```
 
+If you run project code from Jupyter/VS Code notebooks, also install and register
+the venv kernel:
+
+```bash
+python -m pip install ipykernel
+python -m ipykernel install --user --name roundnet-matchmaking --display-name "Python (RoundnetMatchmaking)"
+```
+
+Then select that kernel before running notebook cells.
+
 Preferred launch mode:
 - Use the installed command `roundnet-matchmaking`.
 - For development, use module execution from repo root: `python -m ui.player_selection_ui`.
 - Avoid direct file execution (`python ui/player_selection_ui.py`) because it can bypass package import context.
+- For the desktop UI, prefer launching from a terminal (not from a notebook cell).
+
+## UI Troubleshooting (Windows)
+
+### `TclError: Can't find a usable init.tcl`
+
+Error example:
+
+```text
+TclError: Can't find a usable init.tcl ...
+This probably means that Tcl wasn't installed properly.
+```
+
+This means the active Python interpreter cannot find its Tcl/Tk runtime files.
+
+Recommended fix order:
+
+1. Verify which interpreter is active:
+   ```bash
+   python -c "import sys; print(sys.executable)"
+   ```
+2. Recreate the venv from a full Python install that includes Tcl/Tk.
+3. Reinstall dependencies:
+   ```bash
+   python -m pip install -e ".[dev]"
+   python -m pip install -e ".[ui]"
+   ```
+4. Quick tkinter check:
+   ```bash
+   python -c "import tkinter as tk; r = tk.Tk(); r.destroy(); print('tk ok')"
+   ```
+
+If needed as a temporary workaround, set these environment variables to your
+Python Tcl directories before launching:
+
+```powershell
+$env:TCL_LIBRARY = "C:\Path\To\Python\tcl\tcl8.6"
+$env:TK_LIBRARY  = "C:\Path\To\Python\tcl\tk8.6"
+```
 
 ## Development
 Run script-based validation (CI baseline):
