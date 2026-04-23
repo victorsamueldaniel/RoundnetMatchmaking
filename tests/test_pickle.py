@@ -99,7 +99,9 @@ try:
     print("Testing legacy objective marker compatibility...")
 
     legacy_session = main.SessionOfRounds.__new__(main.SessionOfRounds)
-    legacy_session.__setstate__({"_objective_function_name": "mean_std_happiness_objective"})
+    legacy_session.__setstate__(
+        {"_objective_function_name": "mean_std_happiness_objective"}
+    )
     assert (
         getattr(legacy_session, "_objective_function_name", None)
         == "mean_std_happiness_objective"
@@ -107,7 +109,9 @@ try:
     assert getattr(legacy_session, "_objective_lambda_weight", None) == 2
 
     legacy_round = main.GamesRound.__new__(main.GamesRound)
-    legacy_round.__setstate__({"_objective_function_name": "mean_std_happiness_objective"})
+    legacy_round.__setstate__(
+        {"_objective_function_name": "mean_std_happiness_objective"}
+    )
     legacy_round.participants = [
         SimpleNamespace(happiness=happiness) for happiness in (1.0, 3.0, 5.0)
     ]

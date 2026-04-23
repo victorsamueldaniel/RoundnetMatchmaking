@@ -9,7 +9,6 @@ This document explains how happiness is actually optimized from UI input to fina
 - Weights and penalties
 - Iteration budget semantics
 - Objective functions used at each stage
-- Contradictions between expected behavior and current implementation
 
 This replaces the previous implementation-only summary for iterations.
 
@@ -42,7 +41,7 @@ flowchart TD
   I1 --> I2[Level-gap filter]
   I2 --> I3[Pass 0: enforce gender if configured]
   I3 --> I4[Pass 1: relax gender if no pass 0 solution]
-  I4 --> I5[objective_function(self) ranking]
+    I4 --> I5[Objective scoring ranking]
 
   H -->|level| J[create_games_by_level]
   J --> J1[Construct team pairs + level diff]
@@ -51,8 +50,8 @@ flowchart TD
 
   I5 --> K[Apply chosen round games and update happiness]
   J3 --> K
-  K --> L[Session stats: mean_happiness/std_happiness]
-  L --> M[Seed score = mean - lambda * std]
+    K --> L[Session stats: mean_happiness/std_happiness]
+    L --> M[Seed score via objective_function]
   M --> N{All rounds have games?}
   N -->|yes| O[Best valid seed candidate]
   N -->|no| P[Fallback candidate]
@@ -99,8 +98,10 @@ Primary anchors:
     - [core/models.py:789](../core/models.py#L789)
 
 6. Seed-level ranking after all rounds are created:
-    - Score uses `mean_happiness - lambda_weight * std_happiness`.
-    - [core/algorithm.py:147](../core/algorithm.py#L147), [core/algorithm.py:149](../core/algorithm.py#L149)
+    - Primary score uses `objective_function(view_of_session_players)`.
+    - By default this objective is `mean_min_max_happiness_objective` with UI-configured `lambda_weight`.
+    - Fallback to `mean_happiness - lambda_weight * std_happiness` is used only when objective evaluation is incompatible at session seed-selection stage.
+    - [core/algorithm.py:16](../core/algorithm.py#L16), [core/algorithm.py:99](../core/algorithm.py#L99), [core/algorithm.py:171](../core/algorithm.py#L171), [core/algorithm.py:183](../core/algorithm.py#L183)
 
 7. Valid-session gate and fallback:
     - Seeds with empty rounds are not eligible for best-valid selection.
@@ -191,20 +192,6 @@ UI orchestration and labels materially affect interpretation of optimization beh
 | Internal generation order | UI computes `rounds_reordering`; core also prioritizes level rounds internally before optional reorder | [ui/player_selection_ui.py:4824](../ui/player_selection_ui.py#L4824), [core/models.py:1708](../core/models.py#L1708), [core/models.py:1798](../core/models.py#L1798) | Harder to reason about round-by-round causality without explicit documentation |
 | Games Editor score strip | Uses mean+lambda*bottom-percent wording and same lambda as UI slider at session start | [ui/player_selection_ui.py:2680](../ui/player_selection_ui.py#L2680), [ui/player_selection_ui.py:2660](../ui/player_selection_ui.py#L2660) | Improves Stage A alignment but can still differ from Stage C post-processing score semantics |
 
-## Contradiction Audit (Open Items)
-No open contradictions remain from this audit.
-
-Resolved on 2026-04-23:
-
-1. C5 objective serialization/restore:
-    - Objective metadata now stores function name and tunable parameters.
-    - Restore path maps metadata back to objective callables with legacy compatibility.
-    - Evidence: [core/models.py:72](../core/models.py#L72), [core/models.py:617](../core/models.py#L617), [core/models.py:1663](../core/models.py#L1663)
-
-2. C7 redundant downstream cap:
-    - Removed the `num_iter * 10` truncation in `create_all_balanced_games`.
-    - Iteration budget remains bounded by generation cap (`max_combinations = self.num_iter`).
-    - Evidence: [core/models.py:785](../core/models.py#L785), [core/models.py:897](../core/models.py#L897)
 
 ## Minimum Test Additions to Prevent Regression
 Suggested additions (new or migrated pytest-style tests):

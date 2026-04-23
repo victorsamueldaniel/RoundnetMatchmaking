@@ -183,7 +183,9 @@ def _restore_objective_from_metadata(
             default_lambda_weight if lambda_weight is None else lambda_weight
         )
         return (
-            lambda x: mean_std_happiness_objective(x, lambda_weight=resolved_lambda_weight),
+            lambda x: mean_std_happiness_objective(
+                x, lambda_weight=resolved_lambda_weight
+            ),
             name,
             resolved_lambda_weight,
             None,
@@ -208,7 +210,9 @@ def _restore_objective_from_metadata(
     # Unknown objective names fall back to the configured default objective.
     if default_name == "mean_std_happiness_objective":
         return (
-            lambda x: mean_std_happiness_objective(x, lambda_weight=default_lambda_weight),
+            lambda x: mean_std_happiness_objective(
+                x, lambda_weight=default_lambda_weight
+            ),
             "mean_std_happiness_objective",
             default_lambda_weight,
             None,
