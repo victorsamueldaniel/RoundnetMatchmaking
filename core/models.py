@@ -4,6 +4,7 @@ plus objective-function helpers."""
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
 import numpy as np
+import inspect
 from itertools import combinations
 from collections import defaultdict
 from math import comb
@@ -54,6 +55,174 @@ def mean_min_max_happiness_objective(self, lambda_weight=2, percentile=10):
     # Penalize if any player is below the threshold
     return happiness_mean + lambda_weight * np.mean(
         [h for h in all_happiness if h <= bottom_percent]
+    )
+
+
+_KNOWN_OBJECTIVE_FUNCTIONS = {
+    "mean_happiness_objective",
+    "std_happiness_objective",
+    "mean_std_happiness_objective",
+    "min_happiness_objective",
+    "mean_min_max_happiness_objective",
+}
+
+
+def _extract_callable_name(objective_function):
+    name = getattr(objective_function, "__name__", None)
+    if name and name != "<lambda>":
+        return name
+
+    base_callable = getattr(objective_function, "func", None)
+    if base_callable is not None:
+        base_name = getattr(base_callable, "__name__", None)
+        if base_name:
+            return base_name
+
+    return name
+
+
+def _extract_code_names(objective_function):
+    names = set()
+
+    code_obj = getattr(objective_function, "__code__", None)
+    if code_obj is not None:
+        names.update(code_obj.co_names)
+
+    base_callable = getattr(objective_function, "func", None)
+    base_code_obj = getattr(base_callable, "__code__", None)
+    if base_code_obj is not None:
+        names.update(base_code_obj.co_names)
+
+    return names
+
+
+def _extract_numeric_from_callable(objective_function, key):
+    keywords = getattr(objective_function, "keywords", None)
+    if isinstance(keywords, dict):
+        value = keywords.get(key)
+        if isinstance(value, (int, float)):
+            return float(value)
+
+    try:
+        closure_vars = inspect.getclosurevars(objective_function)
+        value = closure_vars.nonlocals.get(key)
+        if isinstance(value, (int, float)):
+            return float(value)
+    except Exception:
+        pass
+
+    return None
+
+
+def _infer_objective_metadata(
+    objective_function,
+    default_name,
+    default_lambda_weight,
+    default_percentile=10,
+):
+    name = _extract_callable_name(objective_function)
+    if name not in _KNOWN_OBJECTIVE_FUNCTIONS:
+        code_names = _extract_code_names(objective_function)
+        for known_name in _KNOWN_OBJECTIVE_FUNCTIONS:
+            if known_name in code_names:
+                name = known_name
+                break
+
+    if name not in _KNOWN_OBJECTIVE_FUNCTIONS:
+        name = default_name
+
+    lambda_weight = None
+    percentile = None
+
+    if name in {"mean_std_happiness_objective", "mean_min_max_happiness_objective"}:
+        lambda_weight = _extract_numeric_from_callable(
+            objective_function, "lambda_weight"
+        )
+        if lambda_weight is None:
+            lambda_weight = default_lambda_weight
+
+    if name in {"min_happiness_objective", "mean_min_max_happiness_objective"}:
+        percentile = _extract_numeric_from_callable(objective_function, "percentile")
+        if percentile is None:
+            percentile = default_percentile
+
+    return {
+        "name": name,
+        "lambda_weight": lambda_weight,
+        "percentile": percentile,
+    }
+
+
+def _restore_objective_from_metadata(
+    objective_name,
+    default_name,
+    default_lambda_weight,
+    default_percentile,
+    lambda_weight=None,
+    percentile=None,
+):
+    name = objective_name or default_name
+
+    if name == "mean_happiness_objective":
+        return mean_happiness_objective, name, None, None
+
+    if name == "std_happiness_objective":
+        return std_happiness_objective, name, None, None
+
+    if name == "min_happiness_objective":
+        resolved_percentile = default_percentile if percentile is None else percentile
+        return (
+            lambda x: min_happiness_objective(x, percentile=resolved_percentile),
+            name,
+            None,
+            resolved_percentile,
+        )
+
+    if name == "mean_std_happiness_objective":
+        resolved_lambda_weight = (
+            default_lambda_weight if lambda_weight is None else lambda_weight
+        )
+        return (
+            lambda x: mean_std_happiness_objective(x, lambda_weight=resolved_lambda_weight),
+            name,
+            resolved_lambda_weight,
+            None,
+        )
+
+    if name == "mean_min_max_happiness_objective":
+        resolved_lambda_weight = (
+            default_lambda_weight if lambda_weight is None else lambda_weight
+        )
+        resolved_percentile = default_percentile if percentile is None else percentile
+        return (
+            lambda x: mean_min_max_happiness_objective(
+                x,
+                lambda_weight=resolved_lambda_weight,
+                percentile=resolved_percentile,
+            ),
+            name,
+            resolved_lambda_weight,
+            resolved_percentile,
+        )
+
+    # Unknown objective names fall back to the configured default objective.
+    if default_name == "mean_std_happiness_objective":
+        return (
+            lambda x: mean_std_happiness_objective(x, lambda_weight=default_lambda_weight),
+            "mean_std_happiness_objective",
+            default_lambda_weight,
+            None,
+        )
+
+    return (
+        lambda x: mean_min_max_happiness_objective(
+            x,
+            lambda_weight=default_lambda_weight,
+            percentile=default_percentile,
+        ),
+        "mean_min_max_happiness_objective",
+        default_lambda_weight,
+        default_percentile,
     )
 
 
@@ -525,28 +694,41 @@ class GamesRound:
     def __getstate__(self):
         """Return state for pickling, excluding non-picklable items"""
         state = self.__dict__.copy()
-        # Store a flag indicating which objective function was used
-        if hasattr(self, "objective_function") and self.objective_function is not None:
-            try:
-                state["_objective_function_name"] = self.objective_function.__name__
-            except AttributeError:
-                state["_objective_function_name"] = "mean_std_happiness_objective"
-        else:
-            state["_objective_function_name"] = "mean_std_happiness_objective"
+        objective_metadata = _infer_objective_metadata(
+            getattr(self, "objective_function", None),
+            default_name="mean_std_happiness_objective",
+            default_lambda_weight=2,
+            default_percentile=10,
+        )
+        state["_objective_function_name"] = objective_metadata["name"]
+        state["_objective_lambda_weight"] = objective_metadata["lambda_weight"]
+        state["_objective_percentile"] = objective_metadata["percentile"]
         # Remove the actual lambda/function as it can't be pickled
         state.pop("objective_function", None)
         return state
 
     def __setstate__(self, state):
         """Restore state from pickling"""
-        func_name = state.pop(
-            "_objective_function_name", "mean_std_happiness_objective"
-        )
+        func_name = state.pop("_objective_function_name", None)
+        lambda_weight = state.pop("_objective_lambda_weight", None)
+        percentile = state.pop("_objective_percentile", None)
         self.__dict__.update(state)
-        # Restore default objective function
-        self.objective_function = lambda x: mean_std_happiness_objective(
-            x, lambda_weight=2
+        (
+            self.objective_function,
+            resolved_name,
+            resolved_lambda_weight,
+            resolved_percentile,
+        ) = _restore_objective_from_metadata(
+            objective_name=func_name,
+            default_name="mean_std_happiness_objective",
+            default_lambda_weight=2,
+            default_percentile=10,
+            lambda_weight=lambda_weight,
+            percentile=percentile,
         )
+        self._objective_function_name = resolved_name
+        self._objective_lambda_weight = resolved_lambda_weight
+        self._objective_percentile = resolved_percentile
 
     def create_set_of_all_possible_teams(self, remove_previous_teams=True):
         # function that creates all possible teams of <players_per_team> players from a set of players
@@ -613,10 +795,12 @@ class GamesRound:
                 player
             )
 
-        # Sort each group of players with the same games played by increasing happiness
+        # Sort each group by decreasing happiness so, within overplayed players,
+        # happier players are benched first and less-happy players keep playing.
         for k in dic_amount_of_games_played_list_of_players:
             dic_amount_of_games_played_list_of_players[k].sort(
-                key=lambda p: p.happiness
+                key=lambda p: p.happiness,
+                reverse=True,
             )
 
         list_descending_priority = [
@@ -714,15 +898,10 @@ class GamesRound:
         best_games = None
         best_overall_score = float("-inf")
 
-        # Sample a subset if there are too many combinations (performance optimization)
-        max_combinations_to_test = min(len(all_game_combinations), self.num_iter * 10)
-        if len(all_game_combinations) > max_combinations_to_test:
-            random.shuffle(all_game_combinations)
-            all_game_combinations = all_game_combinations[:max_combinations_to_test]
-
         # Two-pass approach: First try with gender preference, then without if needed
         two_pass = self.gender_preference is not None
         iterations_with_scores = []
+        best_iteration_data = None
 
         for pass_num in range(2 if two_pass else 1):
             enforce_gender_preference = (pass_num == 0) if two_pass else False
@@ -738,36 +917,40 @@ class GamesRound:
             #     )
 
             for game_combination in all_game_combinations:
-                # Store this iteration (only on first pass to avoid duplicates)
-                if pass_num == 0:
-                    iteration_data = {
-                        "games": game_combination,
-                        "score": None,
-                        "meets_tolerance": False,
-                    }
+                iteration_data = {
+                    "games": game_combination,
+                    "score": None,
+                    "meets_tolerance": False,
+                    "meets_level_tolerance": False,
+                    "meets_gender_preference": None,
+                    "pass_num": pass_num,
+                    "gender_enforced": enforce_gender_preference,
+                    "selected": False,
+                }
 
                 # Check if all games meet level gap tolerance
-                if not all(
+                meets_level_tolerance = all(
                     game.level_difference <= level_gap_tol for game in game_combination
-                ):
-                    if pass_num == 0:
-                        iterations_with_scores.append(iteration_data)
+                )
+                iteration_data["meets_level_tolerance"] = meets_level_tolerance
+                if not meets_level_tolerance:
+                    iterations_with_scores.append(iteration_data)
                     continue
 
                 # Check if all games meet gender preference (on first pass only)
                 if enforce_gender_preference:
-                    if not all(
+                    meets_gender_preference = all(
                         game.compute_gender_preference_score() == 1
                         for game in game_combination
-                    ):
-                        if pass_num == 0:
-                            iterations_with_scores.append(iteration_data)
+                    )
+                    iteration_data["meets_gender_preference"] = meets_gender_preference
+                    if not meets_gender_preference:
+                        iterations_with_scores.append(iteration_data)
                         continue
-                    if pass_num == 0:
-                        iteration_data["meets_tolerance"] = True
                 else:
-                    if pass_num == 0:
-                        iteration_data["meets_tolerance"] = True
+                    iteration_data["meets_gender_preference"] = None
+
+                iteration_data["meets_tolerance"] = True
 
                 # Save current happiness state as an indexed list (faster than dict)
                 happiness_backup = [
@@ -789,9 +972,8 @@ class GamesRound:
                 overall_score = objective_function(self)
 
                 # Update iteration data with the score
-                if pass_num == 0:
-                    iteration_data["score"] = overall_score
-                    iterations_with_scores.append(iteration_data)
+                iteration_data["score"] = overall_score
+                iterations_with_scores.append(iteration_data)
 
                 # Restore happiness state by index (faster than dict lookup)
                 for player, (h, ph, lh) in zip(people_playing, happiness_backup):
@@ -803,6 +985,10 @@ class GamesRound:
                 if overall_score > best_overall_score:
                     best_overall_score = overall_score
                     best_games = game_combination
+                    best_iteration_data = iteration_data
+
+        if best_iteration_data is not None:
+            best_iteration_data["selected"] = True
 
         # Store all iterations in the instance
         self.iterations = iterations_with_scores
@@ -1113,6 +1299,7 @@ class GamesRound:
 
         for game_num, players_in_game in enumerate(all_players_in_each_game):
             start_idx = game_num * self.players_per_team * self.teams_per_game
+            iteration_start_idx = len(iterations_with_scores)
 
             if alternate:
                 # Divide players into teams by alternating
@@ -1173,6 +1360,7 @@ class GamesRound:
                         "teams": (team1, team2),
                         "level_diff": level_diff,
                         "game_num": game_num,
+                        "selected": False,
                     }
                 )
 
@@ -1209,6 +1397,23 @@ class GamesRound:
                 len(team1_players) == self.players_per_team
                 and len(team2_players) == self.players_per_team
             ):
+                selected_pair_key = frozenset(
+                    (team1_obj.players_frozenset, team2_obj.players_frozenset)
+                )
+                for iteration_idx in range(
+                    iteration_start_idx, len(iterations_with_scores)
+                ):
+                    iteration_data = iterations_with_scores[iteration_idx]
+                    if iteration_data.get("game_num") != game_num:
+                        continue
+                    iter_team1, iter_team2 = iteration_data["teams"]
+                    iter_pair_key = frozenset(
+                        (iter_team1.players_frozenset, iter_team2.players_frozenset)
+                    )
+                    if iter_pair_key == selected_pair_key:
+                        iteration_data["selected"] = True
+                        break
+
                 team1 = TeamOfTwo(*team1_players)
                 team2 = TeamOfTwo(*team2_players)
                 game = GameOfFour(
@@ -1572,30 +1777,47 @@ class SessionOfRounds:
     def __getstate__(self):
         """Return state for pickling, excluding non-picklable items"""
         state = self.__dict__.copy()
-        # Store a flag indicating which objective function was used
-        if hasattr(self, "objective_function") and self.objective_function is not None:
-            try:
-                # Try to identify the objective function
-                state["_objective_function_name"] = self.objective_function.__name__
-            except AttributeError:
-                state["_objective_function_name"] = "mean_std_happiness_objective"
-        else:
-            state["_objective_function_name"] = "mean_std_happiness_objective"
+        objective_metadata = _infer_objective_metadata(
+            getattr(self, "objective_function", None),
+            default_name="mean_min_max_happiness_objective",
+            default_lambda_weight=2.4,
+            default_percentile=10,
+        )
+        state["_objective_function_name"] = objective_metadata["name"]
+        state["_objective_lambda_weight"] = objective_metadata["lambda_weight"]
+        state["_objective_percentile"] = objective_metadata["percentile"]
         # Remove the actual lambda/function as it can't be pickled
         state.pop("objective_function", None)
         return state
 
     def __setstate__(self, state):
         """Restore state from pickling"""
-        # Restore the objective function based on the stored name
-        func_name = state.pop(
-            "_objective_function_name", "mean_std_happiness_objective"
-        )
+        func_name = state.pop("_objective_function_name", None)
+        lambda_weight = state.pop("_objective_lambda_weight", None)
+        percentile = state.pop("_objective_percentile", None)
+
+        # Legacy compatibility: historical std-marker restores std with lambda=2.
+        if func_name == "mean_std_happiness_objective" and lambda_weight is None:
+            lambda_weight = 2
+
         self.__dict__.update(state)
-        # Restore default objective function
-        self.objective_function = lambda x: mean_std_happiness_objective(
-            x, lambda_weight=2
+
+        (
+            self.objective_function,
+            resolved_name,
+            resolved_lambda_weight,
+            resolved_percentile,
+        ) = _restore_objective_from_metadata(
+            objective_name=func_name,
+            default_name="mean_min_max_happiness_objective",
+            default_lambda_weight=2.4,
+            default_percentile=10,
+            lambda_weight=lambda_weight,
+            percentile=percentile,
         )
+        self._objective_function_name = resolved_name
+        self._objective_lambda_weight = resolved_lambda_weight
+        self._objective_percentile = resolved_percentile
 
     def _calculate_gender_distribution(self):
         """Calculate the majority and minority genders in the session, and gender-specific level medians"""

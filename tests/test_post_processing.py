@@ -115,7 +115,7 @@ else:
 
 # --- Test 3: unknown player names → no crash ---
 print()
-print("=== Test 3: preferred pair with unknown name → no crash ===")
+print("=== Test 3: preferred pair with unknown name -> no crash ===")
 players3 = [Player(df.loc[n]) for n in df.index]
 sess3 = SessionOfRounds(
     list_of_players=players3,

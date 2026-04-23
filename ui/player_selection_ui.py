@@ -2677,7 +2677,7 @@ class PlayerSelectionUI:
         score_history_outer.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=(0, 4))
         tk.Label(
             score_history_outer,
-            text="Score history  (mean − λ·std):",
+            text="Score history  (mean + λ·bottom_10_%):",
             font=self.fonts["small_bold"],
             fg=self.colors["text_light"],
             bg=self.colors["bg_dark"],
@@ -4857,6 +4857,9 @@ class PlayerSelectionUI:
                     level_gap_tol=level_gap_tol,
                     num_iter=435,
                     lambda_weight=lambda_weight,
+                    objective_function=lambda x: main_module.mean_min_max_happiness_objective(
+                        x, lambda_weight=lambda_weight
+                    ),
                     weight_same_teammate=5,
                     first_seed=first_seed,
                     last_seed=last_seed,

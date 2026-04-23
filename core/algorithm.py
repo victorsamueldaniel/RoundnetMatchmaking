@@ -5,9 +5,33 @@ import numpy as np
 from core.models import (
     Player,
     SessionOfRounds,
-    mean_happiness_objective,
     mean_min_max_happiness_objective,
 )
+
+
+class _ParticipantsView:
+    """Adapter exposing a participants attribute for objective functions."""
+
+    def __init__(self, participants):
+        self.participants = participants
+
+
+def _score_players_with_objective(players, objective_function, lambda_weight):
+    """Return objective score for players, with robust fallback.
+
+    The fallback keeps backward compatibility for custom objective functions that
+    don't accept the participants-view adapter.
+    """
+    if objective_function is not None:
+        try:
+            score = float(objective_function(_ParticipantsView(players)))
+            if np.isfinite(score):
+                return score, False
+        except Exception:
+            pass
+
+    happinesses = [p.happiness for p in players]
+    return np.mean(happinesses) - lambda_weight * np.std(happinesses), True
 
 
 def run_session_generation_with_seed_optimization(
@@ -26,7 +50,7 @@ def run_session_generation_with_seed_optimization(
     last_seed=9,
     spectrum=True,
     games_per_round_each_round=None,
-    objective_function=lambda x: mean_min_max_happiness_objective(x, lambda_weight=2.4),
+    objective_function=None,
     print_progress=True,
     print_all_happiness=False,
     progress_callback=None,
@@ -77,9 +101,13 @@ def run_session_generation_with_seed_optimization(
         Best session configuration and the seed that produced it
     """
 
-    # Set default objective function if not provided
+    # Set default objective function if not provided.
+    # The default objective inherits lambda_weight so stage-A (round scoring)
+    # and stage-B (seed scoring) use consistent lambda semantics.
     if objective_function is None:
-        objective_function = mean_happiness_objective
+        objective_function = lambda x: mean_min_max_happiness_objective(
+            x, lambda_weight=lambda_weight
+        )
 
     # Set default type preferences if not provided
     if type_preferences is None:
@@ -97,6 +125,7 @@ def run_session_generation_with_seed_optimization(
     fallback_session = None
     fallback_seed = None
     fallback_score = None
+    objective_fallback_warned = False
 
     for seed in range(first_seed, last_seed + 1):
         if progress_callback is not None:
@@ -144,12 +173,19 @@ def run_session_generation_with_seed_optimization(
             print("current mean happiness:", temp_session_of_rounds.mean_happiness)
             print("current standard deviation:", temp_session_of_rounds.std_happiness)
 
-        current_score = (
-            temp_session_of_rounds.mean_happiness
-            - lambda_weight * temp_session_of_rounds.std_happiness
+        current_score, used_fallback_score = _score_players_with_objective(
+            temp_session_of_rounds.players,
+            objective_function,
+            lambda_weight,
         )
         if print_progress:
             print("current score:", current_score)
+            if used_fallback_score and not objective_fallback_warned:
+                print(
+                    "Warning: objective_function could not be evaluated at session "
+                    "seed-selection stage; falling back to mean - lambda * std."
+                )
+                objective_fallback_warned = True
 
         if print_progress:
             player_pairs, pair_rounds = temp_session_of_rounds.count_all_pairs()
