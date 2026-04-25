@@ -2,7 +2,13 @@
 Simple build script for Roundnet Matchmaking.
 
 Usage:
+    python build_exe.py [--version VERSION]
+
+Examples:
     python build_exe.py
+    python build_exe.py --version 1.2.0
+        -> dist folder: RoundnetMatchmaking_1_2_0/
+        -> exe:         RoundnetMatchmaking_1_2_0.exe
 
 What it does:
 - builds a one-dir executable with PyInstaller
@@ -12,6 +18,7 @@ What it does:
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import os
 import shutil
@@ -299,11 +306,11 @@ def _rotate_dist_to_old(build_root: Path) -> None:
             raise RuntimeError(f"Could not rename dist to OLD_dist: {exc}") from exc
 
 
-def clean_previous_outputs(build_root: Path, project_root: Path) -> None:
+def clean_previous_outputs(build_root: Path, project_root: Path, app_name: str) -> None:
     build_dir = build_root / "build"
-    spec_file = build_root / f"{APP_NAME}.spec"
+    spec_file = build_root / f"{app_name}.spec"
     dist_dir = build_root / "dist"
-    output_dir = dist_dir / APP_NAME
+    output_dir = dist_dir / app_name
 
     if build_dir.exists():
         shutil.rmtree(build_dir)
@@ -322,13 +329,13 @@ def clean_previous_outputs(build_root: Path, project_root: Path) -> None:
 
 
 def pyinstaller_command(
-    build_root: Path, project_root: Path, icon_path: Path | None
+    build_root: Path, project_root: Path, icon_path: Path | None, app_name: str
 ) -> list[str]:
     cmd = [
         sys.executable,
         "-m",
         "PyInstaller",
-        f"--name={APP_NAME}",
+        f"--name={app_name}",
         "--onedir",
         "--windowed",
         "--clean",
@@ -388,14 +395,16 @@ def copy_runtime_files(project_root: Path, dist_app_dir: Path) -> None:
             print(f"  [WARN] Missing: {relative_name}")
 
 
-def build_exe() -> bool:
+def build_exe(version: str | None = None) -> bool:
     # build_root = ui/ folder — build/, dist/, OLD_dist/ are created here
     build_root = Path(__file__).resolve().parent
     # project_root = workspace root — source files are relative to here
     project_root = build_root.parent
-    dist_app_dir = build_root / "dist" / APP_NAME
 
-    print(f"Building {APP_NAME}...")
+    app_name = f"{APP_NAME}_{version.replace('.', '_')}" if version else APP_NAME
+    dist_app_dir = build_root / "dist" / app_name
+
+    print(f"Building {app_name}...")
     print(f"Python: {sys.executable}")
 
     ensure_pyinstaller()
@@ -403,9 +412,9 @@ def build_exe() -> bool:
     ensure_required_python_modules()
 
     icon_path = ensure_icon(project_root)
-    clean_previous_outputs(build_root, project_root)
+    clean_previous_outputs(build_root, project_root, app_name)
 
-    cmd = pyinstaller_command(build_root, project_root, icon_path)
+    cmd = pyinstaller_command(build_root, project_root, icon_path, app_name)
     print("Running:")
     print(" ".join(cmd))
 
@@ -422,14 +431,35 @@ def build_exe() -> bool:
     copy_runtime_files(project_root, dist_app_dir)
     strip_bloat(dist_app_dir)
 
-    exe_path = dist_app_dir / f"{APP_NAME}.exe"
+    # Create a zip archive next to the output folder.
+    zip_path = build_root / "dist" / app_name
+    print(f"\nCreating zip archive: {zip_path}.zip ...")
+    shutil.make_archive(
+        str(zip_path), "zip", root_dir=build_root / "dist", base_dir=app_name
+    )
+    print(f"  [OK] {zip_path}.zip")
+
+    exe_path = dist_app_dir / f"{app_name}.exe"
     print("\nBuild completed.")
     print(f"Executable: {exe_path}")
-    print("Distribute the full folder:")
+    print("Distribute the full folder or the zip:")
     print(f"  {dist_app_dir}")
+    print(f"  {zip_path}.zip")
     return True
 
 
 if __name__ == "__main__":
-    raise SystemExit(0 if build_exe() else 1)
+    parser = argparse.ArgumentParser(description=f"Build {APP_NAME} executable.")
+    parser.add_argument(
+        "--version",
+        metavar="VERSION",
+        default=None,
+        help="Optional version string (e.g. 1.2.0). Dots are replaced by underscores "
+        "in the folder and exe name.",
+    )
+    args = parser.parse_args()
+    version = args.version
+    if version is None:
+        version = input("Version (leave blank for none): ").strip() or None
+    raise SystemExit(0 if build_exe(version=version) else 1)
 # %%

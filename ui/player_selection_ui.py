@@ -3777,7 +3777,7 @@ class PlayerSelectionUI:
             new_text = (
                 f"{player.name}\n{suffix}\nLvl {player.level}"
                 if suffix is not None
-                else f"{base_text}\n "
+                else f"{base_text}"
             )
             try:
                 btn.config(bg=bg, text=new_text)
