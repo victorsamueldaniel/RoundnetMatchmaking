@@ -16,7 +16,8 @@ Each round image now fits a portrait-style layout, making sessions easier to rea
 
 ## BUG FIXES
 ### happiness computation
-Happiness Computation is now correctly done, espetially on first swap in games editor. The pair preferences work now better with happiness computation fixed
+Happiness Computation is now correctly done, especially on first swap in games editor. The pair preferences work now better with happiness computation fixed
+
 ---
 
 # Version 1.1.0 — April 21, 2026
