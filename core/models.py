@@ -58,6 +58,53 @@ def mean_min_max_happiness_objective(self, lambda_weight=2, percentile=10):
     )
 
 
+def compute_session_score(players, objective_name, lambda_weight=2.4, percentile=10):
+    """Compute a scalar session score from a list of Player objects and objective metadata.
+
+    Parameters
+    ----------
+    players : list of Player
+        All players whose happiness to include.
+    objective_name : str or None
+        One of the _KNOWN_OBJECTIVE_FUNCTIONS names.  Defaults to
+        ``mean_min_max_happiness_objective`` when None or unrecognised.
+    lambda_weight : float
+        Lambda parameter used by mean_std and mean_min_max objectives.
+    percentile : float
+        Bottom-percentile parameter used by mean_min_max objective.
+
+    Returns
+    -------
+    float
+    """
+    all_h = [p.happiness for p in players]
+    if not all_h:
+        return 0.0
+
+    name = objective_name or "mean_min_max_happiness_objective"
+
+    if name == "mean_happiness_objective":
+        return float(np.mean(all_h))
+
+    if name == "std_happiness_objective":
+        return float(np.std(all_h))
+
+    if name == "min_happiness_objective":
+        pct = percentile if percentile is not None else 10
+        return float(np.percentile(all_h, pct))
+
+    if name == "mean_std_happiness_objective":
+        lw = lambda_weight if lambda_weight is not None else 2.0
+        return float(np.mean(all_h) - lw * np.std(all_h))
+
+    # Default: mean_min_max_happiness_objective
+    lw = lambda_weight if lambda_weight is not None else 2.4
+    pct = percentile if percentile is not None else 10
+    bottom_threshold = np.percentile(all_h, pct)
+    bottom_vals = [h for h in all_h if h <= bottom_threshold]
+    return float(np.mean(all_h) + lw * np.mean(bottom_vals))
+
+
 _KNOWN_OBJECTIVE_FUNCTIONS = {
     "mean_happiness_objective",
     "std_happiness_objective",
@@ -1596,6 +1643,10 @@ class GamesRound:
                             player.last_happiness_gained
                         )
 
+                    # Update spec_chosen_history for this round
+                    if round_idx < len(player.spec_chosen_history):
+                        player.spec_chosen_history[round_idx] = player.last_spec_chosen
+
                     # Update teammate history for this round
                     for team in [game.team_A, game.team_B]:
                         if player in team.players_set:
@@ -1610,13 +1661,22 @@ class GamesRound:
                             frozenset([p for p in game.participants if p != player])
                         )
 
-        # Update not_playing players' history (they don't gain happiness)
+        # Update not_playing players' history (they don't gain happiness).
+        # Symmetrically roll back any happiness gained in a previous version of
+        # this round before clearing the round-local state, so a swap-and-swap-back
+        # returns to exactly the same score as before the first apply.
         if round_idx is not None:
             for player in self.not_playing:
                 if round_idx < len(player.happiness_gained_history):
                     player.happiness_gained_history[round_idx] = None
                 if round_idx < len(player.spec_chosen_history):
                     player.spec_chosen_history[round_idx] = None
+                # Clear stale played-round teammate / opponent history so downstream
+                # happiness re-computations don't count a benched round as a meeting.
+                if round_idx < len(player.teammate_history):
+                    player.teammate_history[round_idx] = frozenset()
+                if round_idx < len(player.other_players_in_same_game_history):
+                    player.other_players_in_same_game_history[round_idx] = frozenset()
 
         # Update the round's teams set with all current teams
         self.teams = set()
@@ -1928,6 +1988,19 @@ class SessionOfRounds:
                     player.other_players_in_same_game_history[i - 1]
                     for i in order_num_list
                 ]
+
+        # Rebuild all happiness from scratch in display order so that the
+        # initial session score and Games-Editor recalculations share the
+        # same chronological context (displayed rounds are authoritative).
+        num_rounds = len(self.rounds)
+        for player in self.players:
+            player.happiness = 0
+            player.happiness_gained_history = [None] * num_rounds
+            player.teammate_history = [frozenset()] * num_rounds
+            player.other_players_in_same_game_history = [frozenset()] * num_rounds
+            player.spec_chosen_history = [None] * num_rounds
+        for r_idx, r in enumerate(self.rounds):
+            r.recalculate_happiness(r_idx)
 
     def create_rounds(self, seed=None):
         # function that creates a list of rounds

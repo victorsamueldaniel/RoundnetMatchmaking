@@ -1352,7 +1352,7 @@ class PlayerSelectionUI:
         self._make_param_slider(
             params_grid,
             0,
-            0,
+            1,
             "Shift female levels",
             "Temporary shifter applied to female players' level before matchmaking.",
             "female_boost_var",
@@ -1377,24 +1377,48 @@ class PlayerSelectionUI:
         )
         self._make_param_slider(
             params_grid,
-            1,
             0,
-            "minimize happiness gap",
-            "Higher values prioritize reducing happiness inequality across players.",
+            0,
+            "extra factor for bottom 33%",
+            "Higher values prioritize increasing the happiness of the bottom x% of players.",
             "lambda_weight_var",
             "lambda_weight_scale",
             0.0,
-            5.0,
+            10,
             0.1,
-            2.4,
+            2,
+            label_attr="lambda_weight_label",
         )
+        self._make_param_slider(
+            params_grid,
+            1,
+            0,
+            "bottom x% size",
+            "Percentile threshold x used to define the bottom x% of players by happiness.",
+            "percentile_var",
+            "percentile_scale",
+            0,
+            50,
+            1,
+            33,
+        )
+
+        # Keep "factor for bottom x%" label in sync with the percentile slider
+        def _update_lambda_label(*_):
+            try:
+                x = int(self.percentile_var.get())
+                self.lambda_weight_label.config(text=f"factor for bottom {x}%")
+            except Exception:
+                pass
+
+        self.percentile_var.trace_add("write", _update_lambda_label)
 
         # Spectrum toggle parameter
         spectrum_control_frame = tk.Frame(
             params_grid, bg="#dddddd", bd=2, relief=tk.RIDGE
         )
         spectrum_control_frame.grid(
-            row=0, column=1, rowspan=3, sticky=(tk.W, tk.E, tk.N), padx=4, pady=4
+            row=1, column=1, rowspan=3, sticky=(tk.W, tk.E, tk.N), padx=4, pady=4
         )
 
         spectrum_row = tk.Frame(spectrum_control_frame, bg="#dddddd")
@@ -1644,6 +1668,7 @@ class PlayerSelectionUI:
         to_,
         resolution,
         initial_value,
+        label_attr=None,
     ):
         """Create a ridged labeled Scale, assigning self.{var_attr} and self.{scale_attr}."""
         ctrl_frame = tk.Frame(parent, bg="#dddddd", bd=2, relief=tk.RIDGE)
@@ -1660,6 +1685,8 @@ class PlayerSelectionUI:
             fg=self.colors["text_dark"],
         )
         label.pack(side=tk.LEFT)
+        if label_attr is not None:
+            setattr(self, label_attr, label)
         self.bind_tooltip(label, tooltip_text)
         var = tk.DoubleVar(value=initial_value)
         setattr(self, var_attr, var)
@@ -2395,8 +2422,18 @@ class PlayerSelectionUI:
 
         print(f"Added {len(png_files)} plot tabs to main window.")
 
-    def show_session_games_tab(self, png_path: str):
-        """Display the Session Games overview PNG in a dedicated tab."""
+    def show_session_games_tab(self, png_path: str, round_images=None):
+        """Display the Session Games overview as n click-able round tiles.
+
+        Parameters
+        ----------
+        png_path : str
+            Path to the combined session-games PNG (used as fallback and for
+            regeneration after Apply Changes).
+        round_images : list[PIL.Image] | None
+            One PIL Image per round.  When *None* the combined PNG is shown as
+            before (single-image fallback).
+        """
         # Remove any existing "Session Games" tab
         for tab_id in list(self.main_notebook.tabs()):
             if self.main_notebook.tab(tab_id, "text") == "Session Games":
@@ -2414,52 +2451,53 @@ class PlayerSelectionUI:
 
         # Do NOT select this tab — Games Editor stays focused after generation
 
-        # Canvas + scrollbars (same pattern as show_plots_window)
-        canvas = tk.Canvas(tab_frame, bg=self.colors["bg_light"])
-        h_scrollbar = tk.Scrollbar(
-            tab_frame, orient=tk.HORIZONTAL, command=canvas.xview
-        )
-        v_scrollbar = tk.Scrollbar(tab_frame, orient=tk.VERTICAL, command=canvas.yview)
-        canvas.configure(xscrollcommand=h_scrollbar.set, yscrollcommand=v_scrollbar.set)
+        self.session_games_png_path = png_path
 
-        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
-        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        # ------------------------------------------------------------------
+        # When individual round images are provided, use the interactive mode;
+        # otherwise fall back to the plain single-image display.
+        # ------------------------------------------------------------------
+        if not round_images:
+            # ---- plain single-image fallback --------------------------------
+            canvas = tk.Canvas(tab_frame, bg=self.colors["bg_light"])
+            h_scrollbar = tk.Scrollbar(
+                tab_frame, orient=tk.HORIZONTAL, command=canvas.xview
+            )
+            v_scrollbar = tk.Scrollbar(
+                tab_frame, orient=tk.VERTICAL, command=canvas.yview
+            )
+            canvas.configure(
+                xscrollcommand=h_scrollbar.set, yscrollcommand=v_scrollbar.set
+            )
+            h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+            v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+            canvas.zoom_level = 1.0
+            canvas.auto_fit_height = True
+            try:
+                img = Image.open(png_path)
+                canvas.original_image = img
 
-        canvas.zoom_level = 1.0
-        canvas.auto_fit_height = True
-
-        try:
-            img = Image.open(png_path)
-            canvas.original_image = img
-
-            def make_image_functions(cnv):
-                def fit_to_height():
-                    try:
+                def _make_fns(cnv):
+                    def _fit():
                         ch = cnv.winfo_height()
                         if ch <= 1:
                             return
-                        _, orig_h = cnv.original_image.size
-                        cnv.zoom_level = max((ch - 20) / orig_h, 0.1)
-                    except Exception:
-                        pass
+                        _, oh = cnv.original_image.size
+                        cnv.zoom_level = max((ch - 20) / oh, 0.1)
 
-                def update_image():
-                    try:
-                        cw = cnv.winfo_width()
-                        ch = cnv.winfo_height()
+                    def _upd():
+                        cw, ch = cnv.winfo_width(), cnv.winfo_height()
                         if cw <= 1 or ch <= 1:
                             return
                         ow, oh = cnv.original_image.size
-                        nw = int(ow * cnv.zoom_level)
-                        nh = int(oh * cnv.zoom_level)
+                        nw, nh = int(ow * cnv.zoom_level), int(oh * cnv.zoom_level)
                         resized = cnv.original_image.resize(
                             (nw, nh), Image.Resampling.LANCZOS
                         )
                         photo = ImageTk.PhotoImage(resized)
                         cnv.delete("all")
-                        xp = max(0, (cw - nw) // 2)
-                        yp = max(0, (ch - nh) // 2)
+                        xp, yp = max(0, (cw - nw) // 2), max(0, (ch - nh) // 2)
                         cnv.create_image(xp, yp, anchor=tk.NW, image=photo)
                         cnv.image = photo
                         cnv.configure(
@@ -2470,72 +2508,429 @@ class PlayerSelectionUI:
                                 max(ch, yp + nh),
                             )
                         )
-                    except Exception as e:
-                        print(f"Session Games tab: error updating image: {e}")
 
-                def resize_image(event):
-                    if getattr(cnv, "auto_fit_height", False):
-                        fit_to_height()
-                    update_image()
+                    def _resize(event):
+                        if getattr(cnv, "auto_fit_height", False):
+                            _fit()
+                        _upd()
 
-                def zoom_in():
-                    cnv.auto_fit_height = False
-                    cnv.zoom_level = min(cnv.zoom_level * 1.2, 5.0)
-                    update_image()
+                    def _zi():
+                        cnv.auto_fit_height = False
+                        cnv.zoom_level = min(cnv.zoom_level * 1.2, 5.0)
+                        _upd()
 
-                def zoom_out():
-                    cnv.auto_fit_height = False
-                    cnv.zoom_level = max(cnv.zoom_level / 1.2, 0.1)
-                    update_image()
+                    def _zo():
+                        cnv.auto_fit_height = False
+                        cnv.zoom_level = max(cnv.zoom_level / 1.2, 0.1)
+                        _upd()
 
-                return update_image, resize_image, zoom_in, zoom_out
+                    return _upd, _resize, _zi, _zo
 
-            update_image, resize_image, zoom_in, zoom_out = make_image_functions(canvas)
+                _upd, _resize, _zi, _zo = _make_fns(canvas)
+                canvas.bind("<Configure>", _resize)
 
-            canvas.bind("<Configure>", resize_image)
+                def _do_fit(cnv, u):
+                    def _f():
+                        cnv.update_idletasks()
+                        if cnv.winfo_height() <= 1:
+                            cnv.after(50, _f)
+                            return
+                        _, oh = cnv.original_image.size
+                        cnv.zoom_level = max((cnv.winfo_height() - 20) / oh, 0.1)
+                        u()
 
-            def make_fit_fn(cnv, upd_fn):
-                def _fit():
-                    cnv.update_idletasks()
-                    if cnv.winfo_height() <= 1:
-                        cnv.after(50, _fit)
-                        return
-                    _, oh = cnv.original_image.size
-                    cnv.zoom_level = max((cnv.winfo_height() - 20) / oh, 0.1)
-                    upd_fn()
+                    return _f
 
-                return _fit
+                canvas.after(2, _do_fit(canvas, _upd))
 
-            canvas.after(2, make_fit_fn(canvas, update_image))
-
-            def make_wheel_fns(cnv, zi, zo):
                 def _wheel(event):
                     if event.state & 0x0004:
-                        zi() if event.delta > 0 else zo()
+                        _zi() if event.delta > 0 else _zo()
                         return "break"
-                    cnv.yview_scroll(int(-1 * (event.delta / 120)), "units")
+                    canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
                 def _shift_wheel(event):
                     if event.state & 0x0001:
-                        cnv.xview_scroll(int(-1 * (event.delta / 120)), "units")
+                        canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
                         return "break"
 
-                return _wheel, _shift_wheel
+                canvas.bind("<MouseWheel>", _wheel)
+                canvas.bind("<Shift-MouseWheel>", _shift_wheel)
+            except Exception as e:
+                tk.Label(
+                    tab_frame,
+                    text=f"Error loading Session Games image:\n{e}",
+                    font=self.fonts["normal"],
+                    fg="red",
+                    bg=self.colors["bg_light"],
+                ).pack(expand=True)
+            return
 
-            _wheel, _shift_wheel = make_wheel_fns(canvas, zoom_in, zoom_out)
-            canvas.bind("<MouseWheel>", _wheel)
-            canvas.bind("<Shift-MouseWheel>", _shift_wheel)
+        # ------------------------------------------------------------------
+        # Interactive round-swap mode
+        # ------------------------------------------------------------------
+        n_rounds = len(round_images)
 
-        except Exception as e:
-            tk.Label(
-                tab_frame,
-                text=f"Error loading Session Games image:\n{e}",
-                font=self.fonts["normal"],
-                fg="red",
-                bg=self.colors["bg_light"],
-            ).pack(expand=True)
+        # Initialise or reset swap state on self so Apply Changes can access it
+        self._sg_round_images_base = list(round_images)  # original PIL images
+        self._sg_round_order = list(range(n_rounds))  # display_pos -> orig_idx
+        self._sg_selected_round = None  # currently highlighted pos
+        self._sg_has_pending_swaps = False
+        self._sg_round_y_ranges: list = []  # (y_top, y_bot) per display pos
+        self._sg_photo_refs: list = []  # keep PhotoImage refs alive
 
-        self.session_games_png_path = png_path
+        # ---- outer layout: canvas area (left) + right control panel ----
+        outer = tk.Frame(tab_frame, bg=self.colors["bg_light"])
+        outer.pack(fill=tk.BOTH, expand=True)
+
+        # Right panel (fixed width)
+        right_panel = tk.Frame(
+            outer,
+            bg="#EEEEEE",
+            width=150,
+            relief=tk.RIDGE,
+            bd=1,
+        )
+        right_panel.pack(side=tk.RIGHT, fill=tk.Y, padx=(4, 8), pady=8)
+        right_panel.pack_propagate(False)
+
+        tk.Label(
+            right_panel,
+            text="Round Order",
+            font=self.fonts["small_bold"],
+            bg="#EEEEEE",
+            fg=self.colors["accent_red"],
+        ).pack(pady=(14, 4))
+
+        tk.Label(
+            right_panel,
+            text="Click a round to\nselect it, then click\nanother to swap.",
+            font=("Arial", 9),
+            bg="#EEEEEE",
+            fg="#555555",
+            justify=tk.LEFT,
+            wraplength=130,
+        ).pack(padx=8, pady=(0, 12))
+
+        status_lbl = tk.Label(
+            right_panel,
+            text="No pending swaps",
+            font=("Arial", 9),
+            bg="#EEEEEE",
+            fg="#555555",
+            justify=tk.CENTER,
+            wraplength=130,
+        )
+        status_lbl.pack(padx=8, pady=(0, 10))
+
+        apply_btn = tk.Button(
+            right_panel,
+            text="Apply\nChanges",
+            font=self.fonts["small_bold"],
+            bg=self.colors["accent_yellow"],
+            fg=self.colors["text_dark"],
+            relief=tk.RAISED,
+            cursor="hand2",
+            padx=10,
+            pady=8,
+            state=tk.DISABLED,
+        )
+        apply_btn.pack(padx=8, pady=(0, 8))
+
+        reset_btn = tk.Button(
+            right_panel,
+            text="Reset Order",
+            font=("Arial", 9),
+            bg="#CCCCCC",
+            fg=self.colors["text_dark"],
+            relief=tk.RAISED,
+            cursor="hand2",
+            padx=6,
+            pady=4,
+            state=tk.DISABLED,
+        )
+        reset_btn.pack(padx=8)
+
+        # Canvas area (left side)
+        canvas_frame = tk.Frame(outer, bg=self.colors["bg_light"])
+        canvas_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        canvas = tk.Canvas(canvas_frame, bg=self.colors["bg_light"])
+        h_scrollbar = tk.Scrollbar(
+            canvas_frame, orient=tk.HORIZONTAL, command=canvas.xview
+        )
+        v_scrollbar = tk.Scrollbar(
+            canvas_frame, orient=tk.VERTICAL, command=canvas.yview
+        )
+        canvas.configure(xscrollcommand=h_scrollbar.set, yscrollcommand=v_scrollbar.set)
+        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        canvas.zoom_level = 1.0
+        canvas.auto_fit_height = True
+
+        GAP = 8  # pixels between stacked round images
+
+        def _render():
+            canvas.delete("all")
+            self._sg_round_y_ranges = []
+            self._sg_photo_refs = []
+
+            cw = canvas.winfo_width()
+            if cw <= 1:
+                cw = 600
+
+            y_cursor = 0
+            total_width = 0
+
+            for disp_pos in range(n_rounds):
+                orig_idx = self._sg_round_order[disp_pos]
+                pil_img = self._sg_round_images_base[orig_idx]
+                ow, oh = pil_img.size
+                nw = int(ow * canvas.zoom_level)
+                nh = int(oh * canvas.zoom_level)
+                scaled = pil_img.resize((nw, nh), Image.Resampling.LANCZOS)
+                photo = ImageTk.PhotoImage(scaled)
+                self._sg_photo_refs.append(photo)
+
+                xp = max(0, (cw - nw) // 2)
+                canvas.create_image(xp, y_cursor, anchor=tk.NW, image=photo)
+                self._sg_round_y_ranges.append((y_cursor, y_cursor + nh))
+                total_width = max(total_width, nw)
+
+                # Selection highlight — yellow border
+                if disp_pos == self._sg_selected_round:
+                    canvas.create_rectangle(
+                        xp - 4,
+                        y_cursor - 4,
+                        xp + nw + 4,
+                        y_cursor + nh + 4,
+                        outline="#FED403",
+                        width=5,
+                    )
+
+                y_cursor += nh + GAP
+
+            canvas.configure(scrollregion=(0, 0, max(cw, total_width), y_cursor))
+
+        def _fit_to_height():
+            try:
+                ch = canvas.winfo_height()
+                if ch <= 1 or not self._sg_round_images_base:
+                    return
+                total_orig_h = sum(
+                    img.size[1] for img in self._sg_round_images_base
+                ) + GAP * max(0, n_rounds - 1)
+                canvas.zoom_level = max((ch - 20) / total_orig_h, 0.1)
+            except Exception:
+                pass
+
+        def _resize_event(event):
+            if getattr(canvas, "auto_fit_height", False):
+                _fit_to_height()
+            _render()
+
+        def _zoom_in():
+            canvas.auto_fit_height = False
+            canvas.zoom_level = min(canvas.zoom_level * 1.2, 5.0)
+            _render()
+
+        def _zoom_out():
+            canvas.auto_fit_height = False
+            canvas.zoom_level = max(canvas.zoom_level / 1.2, 0.1)
+            _render()
+
+        canvas.bind("<Configure>", _resize_event)
+
+        def _initial_fit():
+            canvas.update_idletasks()
+            if canvas.winfo_height() <= 1:
+                canvas.after(50, _initial_fit)
+                return
+            _fit_to_height()
+            _render()
+
+        canvas.after(2, _initial_fit)
+
+        # ---- click-to-select / swap logic --------------------------------
+        def _on_click(event):
+            cy = canvas.canvasy(event.y)
+            clicked = None
+            for disp_pos, (y_top, y_bot) in enumerate(self._sg_round_y_ranges):
+                if y_top <= cy < y_bot:
+                    clicked = disp_pos
+                    break
+
+            if clicked is None:
+                # Clicked outside any round — deselect
+                self._sg_selected_round = None
+                _render()
+                return
+
+            if self._sg_selected_round is None:
+                # Select this round
+                self._sg_selected_round = clicked
+                _render()
+            elif self._sg_selected_round == clicked:
+                # Deselect
+                self._sg_selected_round = None
+                _render()
+            else:
+                # Swap the two rounds in display order
+                a, b = self._sg_selected_round, clicked
+                self._sg_round_order[a], self._sg_round_order[b] = (
+                    self._sg_round_order[b],
+                    self._sg_round_order[a],
+                )
+                self._sg_selected_round = None
+                self._sg_has_pending_swaps = self._sg_round_order != list(
+                    range(n_rounds)
+                )
+                _render()
+                # Update button states and status label
+                if self._sg_has_pending_swaps:
+                    n_swapped = sum(
+                        1 for i, v in enumerate(self._sg_round_order) if i != v
+                    )
+                    apply_btn.config(state=tk.NORMAL)
+                    reset_btn.config(state=tk.NORMAL)
+                    status_lbl.config(
+                        text=f"{n_swapped} round(s)\nout of place",
+                        fg=self.colors["accent_red"],
+                    )
+                else:
+                    apply_btn.config(state=tk.DISABLED)
+                    reset_btn.config(state=tk.DISABLED)
+                    status_lbl.config(text="No pending swaps", fg="#555555")
+
+        canvas.bind("<Button-1>", _on_click)
+
+        # ---- reset button ------------------------------------------------
+        def _reset_order():
+            self._sg_round_order = list(range(n_rounds))
+            self._sg_selected_round = None
+            self._sg_has_pending_swaps = False
+            apply_btn.config(state=tk.DISABLED)
+            reset_btn.config(state=tk.DISABLED)
+            status_lbl.config(text="No pending swaps", fg="#555555")
+            _render()
+
+        reset_btn.config(command=_reset_order)
+
+        # ---- apply changes button ----------------------------------------
+        def _apply_round_swaps():
+            if not self._sg_has_pending_swaps:
+                return
+
+            apply_btn.config(state=tk.DISABLED)
+            reset_btn.config(state=tk.DISABLED)
+
+            # Warn if the Games Editor has pending player swaps
+            has_editor_changes = bool(getattr(self, "pending_changes", []))
+            if has_editor_changes:
+                from tkinter import messagebox as _mb  # noqa: PLC0415
+
+                if not _mb.askyesno(
+                    "Pending Games Editor changes",
+                    "The Games Editor has unapplied player swaps.\n"
+                    "Applying the round swap will discard them.\n\n"
+                    "Continue?",
+                ):
+                    apply_btn.config(state=tk.NORMAL)
+                    reset_btn.config(state=tk.NORMAL)
+                    return
+
+            # Log the operation
+            print("\n" + "=" * 80)
+            print("APPLYING ROUND ORDER SWAP")
+            orig_labels = " → ".join(f"R{orig + 1}" for orig in self._sg_round_order)
+            print(f"New display order: {orig_labels}")
+            print("=" * 80)
+
+            # Reorder the rounds list on the live session object
+            old_rounds = list(self.session_of_rounds.rounds)
+            self.session_of_rounds.rounds = [
+                old_rounds[orig_idx] for orig_idx in self._sg_round_order
+            ]
+
+            # Reset swap state (will be re-initialised by show_session_games_tab)
+            self._sg_has_pending_swaps = False
+            status_lbl.config(text="Applied!", fg="#1A6B2A")
+
+            # Regenerate the session-games PNG and per-round images
+            try:
+                from core.charts import (  # noqa: PLC0415
+                    create_session_games_png,
+                    create_session_games_round_images,
+                )
+
+                create_session_games_png(
+                    self.session_of_rounds,
+                    png_path,
+                    show_levels=self.png_show_levels_var.get(),
+                )
+                new_round_images = create_session_games_round_images(
+                    self.session_of_rounds,
+                    show_levels=self.png_show_levels_var.get(),
+                )
+                self.show_session_games_tab(png_path, round_images=new_round_images)
+            except Exception as e:
+                print(f"Warning: could not regenerate Session Games PNG: {e}")
+
+            # Regenerate Games Editor (clears any stale pending player swaps)
+            try:
+                self.show_games_editor()
+            except Exception as e:
+                print(f"Warning: could not regenerate Games Editor: {e}")
+
+            # Regenerate plots
+            try:
+                sessions_dir = "sessions"
+                if os.path.exists(sessions_dir):
+                    session_folders = [
+                        os.path.join(sessions_dir, d)
+                        for d in os.listdir(sessions_dir)
+                        if os.path.isdir(os.path.join(sessions_dir, d))
+                    ]
+                    folders_with_plots = [
+                        f
+                        for f in session_folders
+                        if os.path.exists(os.path.join(f, "plots"))
+                    ]
+                    if folders_with_plots:
+                        most_recent = max(folders_with_plots, key=os.path.getmtime)
+                        plots_dir = os.path.join(most_recent, "plots")
+                        main_module.create_all_session_charts(
+                            self.session_of_rounds,
+                            save_png=True,
+                            png_dir=plots_dir,
+                        )
+                        self.show_plots_window(plots_dir)
+                        print("Plots regenerated successfully.")
+            except Exception as e:
+                print(f"Warning: could not regenerate plots: {e}")
+
+            print("=" * 80)
+            print("ROUND ORDER APPLIED SUCCESSFULLY")
+            print("=" * 80)
+
+        apply_btn.config(command=_apply_round_swaps)
+
+        # ---- mousewheel --------------------------------------------------
+        def _wheel(event):
+            if event.state & 0x0004:
+                _zoom_in() if event.delta > 0 else _zoom_out()
+                return "break"
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def _shift_wheel(event):
+            if event.state & 0x0001:
+                canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
+                return "break"
+
+        canvas.bind("<MouseWheel>", _wheel)
+        canvas.bind("<Shift-MouseWheel>", _shift_wheel)
 
     def show_games_editor(self):
         """Create interactive games editor tab where users can swap players"""
@@ -2655,29 +3050,65 @@ class PlayerSelectionUI:
         self.pending_changes = []
         self.swap_history = []  # Track swaps for undo functionality
 
-        # --- Score history (initial + after each Apply) ---
-        try:
-            _lw = float(self.lambda_weight_var.get())
-        except Exception:
-            _lw = 2.4
-        import numpy as _np
+        # Baseline happiness gains per round per player — used by preview coloring.
+        # Keyed as {round_idx: {player_name: gain_value_or_None}}
+        self._editor_baseline_gains = {}
+        for _r_idx, _game_round in enumerate(self.session_of_rounds.rounds):
+            _round_baseline = {}
+            for _p in self.session_of_rounds.players:
+                if _r_idx < len(_p.happiness_gained_history):
+                    _round_baseline[_p.name] = _p.happiness_gained_history[_r_idx]
+                else:
+                    _round_baseline[_p.name] = None
+            self._editor_baseline_gains[_r_idx] = _round_baseline
 
-        _h = [p.happiness for p in self.session_of_rounds.players]
-        _initial_score = float(_np.mean(_h) - _lw * _np.std(_h))
+        # --- Score history (initial + after each Apply) ---
+        # Read objective metadata stored on the session to keep score semantics
+        # in sync with what the optimizer actually used.
+        from core.models import (
+            compute_session_score as _compute_session_score,
+        )  # noqa: PLC0415
+
+        _sess_obj_name = getattr(
+            self.session_of_rounds, "_objective_function_name", None
+        )
+        _sess_lw_raw = getattr(self.session_of_rounds, "_objective_lambda_weight", None)
+        _sess_lw = _sess_lw_raw if _sess_lw_raw is not None else 2.4
+        _sess_pct = getattr(self.session_of_rounds, "_objective_percentile", None) or 10
+        _initial_score = _compute_session_score(
+            self.session_of_rounds.players, _sess_obj_name, _sess_lw, _sess_pct
+        )
         self.score_history = [_initial_score]
-        self._score_history_lambda = _lw
+        # Store objective metadata for post-apply reuse; do NOT use live slider values
+        # so the score stays tied to the generated session regardless of UI changes.
+        self._score_obj_name = _sess_obj_name
+        self._score_lw = _sess_lw
+        self._score_pct = _sess_pct
 
         # Buttons frame (part of editor tab) - matching Session Generation layout
         # Pack this BEFORE canvas so it stays at the bottom
         button_frame = tk.Frame(editor_tab, bg=self.colors["bg_dark"])
         button_frame.pack(side=tk.BOTTOM, pady=15, padx=20)
 
+        # Build a human-readable label for the active objective formula
+        _obj_label_name = _sess_obj_name or "mean_min_max_happiness_objective"
+        if _obj_label_name == "mean_min_max_happiness_objective":
+            _score_label_text = (
+                f"Score history  (mean + {_sess_lw:.1f}·bottom{int(_sess_pct)}%):"
+            )
+        elif _obj_label_name == "mean_std_happiness_objective":
+            _score_label_text = f"Score history  (mean − {_sess_lw:.1f}·std):"
+        elif _obj_label_name == "mean_happiness_objective":
+            _score_label_text = "Score history  (mean happiness):"
+        else:
+            _score_label_text = "Score history:"
+
         # Score history strip — just above buttons
         score_history_outer = tk.Frame(editor_tab, bg=self.colors["bg_dark"])
         score_history_outer.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=(0, 4))
         tk.Label(
             score_history_outer,
-            text="Score history  (mean + λ·bottom_10_%):",
+            text=_score_label_text,
             font=self.fonts["small_bold"],
             fg=self.colors["text_light"],
             bg=self.colors["bg_dark"],
@@ -2796,15 +3227,6 @@ class PlayerSelectionUI:
                 # Game frame
                 game_frame = tk.Frame(games_frame, bg="#F0F0F0", relief=tk.RAISED, bd=2)
                 game_frame.pack(fill=tk.X, pady=3, padx=3)
-
-                game_title = tk.Label(
-                    game_frame,
-                    text=f"Game {game_idx + 1}",
-                    font=self.games_editor_button_font,
-                    fg=self.colors["accent_red"],
-                    bg="#F0F0F0",
-                )
-                game_title.pack(pady=(6, 1))
 
                 # Game type subtitle (type_preference + gender_preference)
                 type_str = (game.type_preference or "open").capitalize()
@@ -2976,7 +3398,7 @@ class PlayerSelectionUI:
 
         btn = tk.Button(
             parent,
-            text=f"{player.name}\n(Lvl {player.level})",
+            text=f"{player.name}\n\nLvl {player.level}",
             font=getattr(self, "games_editor_player_button_font", self.fonts["small"]),
             bg=self.colors["bg_light"],
             fg=self.colors["text_dark"],
@@ -3008,7 +3430,7 @@ class PlayerSelectionUI:
 
         btn = tk.Button(
             parent,
-            text=f"{player.name}\n(Lvl {player.level})",
+            text=f"{player.name}\n\nLvl {player.level}",
             font=getattr(self, "games_editor_player_button_font", self.fonts["small"]),
             bg=self.colors["bg_light"],
             fg=self.colors["text_dark"],
@@ -3052,7 +3474,7 @@ class PlayerSelectionUI:
                 btn = self.game_player_buttons.get(key)
                 if btn:
                     btn.config(
-                        text=f"{player.name}\n(Lvl {player.level})",
+                        text=f"{player.name}\n\nLvl {player.level}",
                         bg=self.colors["bg_light"],
                         relief=tk.RAISED,
                     )
@@ -3063,7 +3485,7 @@ class PlayerSelectionUI:
                 btn = self.game_player_buttons.get(key)
                 if btn:
                     btn.config(
-                        text=f"{player.name}\n(Lvl {player.level})",
+                        text=f"{player.name}\n\nLvl {player.level}",
                         bg=self.colors["bg_light"],
                         relief=tk.RAISED,
                     )
@@ -3080,7 +3502,7 @@ class PlayerSelectionUI:
                 btn = self.game_player_buttons.get(key)
                 if btn:
                     btn.config(
-                        text=f"{player.name}\n(Lvl {player.level})",
+                        text=f"{player.name}\n\nLvl {player.level}",
                         bg=self.colors["bg_light"],
                         relief=tk.RAISED,
                     )
@@ -3114,7 +3536,7 @@ class PlayerSelectionUI:
                         continue
 
                 btn.config(
-                    text=f"{player.name}\n(Lvl {player.level})",
+                    text=f"{player.name}\n\nLvl {player.level} ",
                     bg=self.colors["bg_light"],
                     relief=tk.RAISED,
                 )
@@ -3177,6 +3599,188 @@ class PlayerSelectionUI:
             try:
                 outer.config(bg=bg)
                 inner.config(bg=bg)
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------
+    # Happiness-delta preview helpers (Games Editor)
+    # ------------------------------------------------------------------
+
+    def _delta_to_bg(self, delta):
+        """Return (bg_hex, text_suffix) for a happiness delta.
+
+        White if unchanged, green tint if happier, red tint if less happy.
+        Saturation is interpolated linearly up to ±5 units, then capped.
+        Negative deltas also return a text suffix like '[−2.0]'.
+        """
+        THRESHOLD = 0.05
+        CAP = 5.0
+
+        if abs(delta) < THRESHOLD:
+            return "#FFFFFF", None
+
+        t = min(abs(delta) / CAP, 1.0)  # 0..1
+
+        def lerp_channel(lo, hi, t):
+            return int(lo + (hi - lo) * t)
+
+        if delta > 0:
+            # White (#FFFFFF) → Green (#00CC44)
+            r = lerp_channel(255, 0, t)
+            g = lerp_channel(255, 204, t)
+            b = lerp_channel(255, 68, t)
+            return f"#{r:02X}{g:02X}{b:02X}", f"[{delta:+.1f}]"
+        else:
+            # White (#FFFFFF) → Red (#FF3322)
+            r = lerp_channel(255, 255, t)
+            g = lerp_channel(255, 51, t)
+            b = lerp_channel(255, 34, t)
+            return f"#{r:02X}{g:02X}{b:02X}", f"[{delta:+.1f}]"
+
+    def _preview_happiness_delta(self, round_idx):
+        """Simulate recalculate_happiness for round_idx without permanently changing state.
+
+        Returns a dict {player_name: delta} where delta is the change in
+        happiness_gained for that round compared to the stored baseline.
+        """
+        if not hasattr(self, "session_of_rounds") or self.session_of_rounds is None:
+            return {}
+        if not hasattr(self, "_editor_baseline_gains"):
+            return {}
+
+        game_round = self.session_of_rounds.rounds[round_idx]
+        all_players = self.session_of_rounds.players
+
+        # ---- 1. Snapshot player state ----
+        player_snapshots = {}
+        for p in all_players:
+            player_snapshots[p.name] = {
+                "happiness": p.happiness,
+                "happiness_gained_history": list(p.happiness_gained_history),
+                "last_happiness_gained": getattr(p, "last_happiness_gained", 0),
+                "teammate_history": [frozenset(fs) for fs in p.teammate_history],
+                "other_players_in_same_game_history": [
+                    frozenset(fs) for fs in p.other_players_in_same_game_history
+                ],
+                "spec_chosen_history": list(
+                    p.spec_chosen_history if hasattr(p, "spec_chosen_history") else []
+                ),
+                "last_spec_chosen": getattr(p, "last_spec_chosen", None),
+            }
+
+        # ---- 2. Snapshot game/round state ----
+        game_snapshots = []
+        for game in game_round.games:
+            game_snapshots.append(
+                {
+                    "team_A": game.team_A,
+                    "team_B": game.team_B,
+                    "teams": set(game.teams),
+                    "participants": frozenset(game.participants),
+                    "team_A_mean_level": game.team_A_mean_level,
+                    "team_B_mean_level": game.team_B_mean_level,
+                    "overall_mean_level": game.overall_mean_level,
+                    "level_difference": game.level_difference,
+                    "is_gender_preference_satisfied": game.is_gender_preference_satisfied,
+                }
+            )
+        round_teams_snapshot = set(game_round.teams)
+
+        # ---- 3. Run simulation ----
+        try:
+            game_round.recalculate_happiness(round_idx=round_idx)
+        except Exception:
+            pass
+
+        # ---- 4. Read new gains ----
+        new_gains = {}
+        for p in all_players:
+            if round_idx < len(p.happiness_gained_history):
+                new_gains[p.name] = p.happiness_gained_history[round_idx]
+            else:
+                new_gains[p.name] = None
+
+        # ---- 5. Restore player state ----
+        for p in all_players:
+            snap = player_snapshots.get(p.name)
+            if snap is None:
+                continue
+            p.happiness = snap["happiness"]
+            p.happiness_gained_history = snap["happiness_gained_history"]
+            p.last_happiness_gained = snap["last_happiness_gained"]
+            p.teammate_history = snap["teammate_history"]
+            p.other_players_in_same_game_history = snap[
+                "other_players_in_same_game_history"
+            ]
+            if hasattr(p, "spec_chosen_history"):
+                p.spec_chosen_history = snap["spec_chosen_history"]
+            p.last_spec_chosen = snap["last_spec_chosen"]
+
+        # ---- 6. Restore game/round state ----
+        for game, snap in zip(game_round.games, game_snapshots):
+            game.team_A = snap["team_A"]
+            game.team_B = snap["team_B"]
+            game.teams = snap["teams"]
+            game.participants = snap["participants"]
+            game.team_A_mean_level = snap["team_A_mean_level"]
+            game.team_B_mean_level = snap["team_B_mean_level"]
+            game.overall_mean_level = snap["overall_mean_level"]
+            game.level_difference = snap["level_difference"]
+            game.is_gender_preference_satisfied = snap["is_gender_preference_satisfied"]
+        game_round.teams = round_teams_snapshot
+
+        # ---- 7. Compute deltas vs baseline ----
+        baseline = self._editor_baseline_gains.get(round_idx, {})
+        deltas = {}
+        for name, new_gain in new_gains.items():
+            base_gain = baseline.get(name)
+            new_val = new_gain if new_gain is not None else 0.0
+            base_val = base_gain if base_gain is not None else 0.0
+            deltas[name] = new_val - base_val
+
+        return deltas
+
+    def _apply_happiness_preview_colors(self, round_idx):
+        """Color all player buttons in round_idx based on simulated happiness delta."""
+        if not hasattr(self, "game_player_buttons"):
+            return
+
+        deltas = self._preview_happiness_delta(round_idx)
+        if not deltas:
+            return
+
+        game_round = self.session_of_rounds.rounds[round_idx]
+
+        for key, btn in list(self.game_player_buttons.items()):
+            btn_round, game_idx, team_id, row, col = key
+            if btn_round != round_idx:
+                continue
+
+            # Resolve current player from data model
+            try:
+                if team_id == "not_playing":
+                    index = row * 4 + col
+                    player = game_round.not_playing[index]
+                else:
+                    game = game_round.games[game_idx]
+                    player = (
+                        game.team_A.players[col]
+                        if team_id == "A"
+                        else game.team_B.players[col]
+                    )
+            except Exception:
+                continue
+
+            delta = deltas.get(player.name, 0.0)
+            bg, suffix = self._delta_to_bg(delta)
+            base_text = f"{player.name}\n\nLvl {player.level}"
+            new_text = (
+                f"{player.name}\n{suffix}\nLvl {player.level}"
+                if suffix is not None
+                else f"{base_text}\n "
+            )
+            try:
+                btn.config(bg=bg, text=new_text)
             except Exception:
                 pass
 
@@ -3250,12 +3854,12 @@ class PlayerSelectionUI:
 
         # Update button labels
         btn1.config(
-            text=f"{player2.name}\n(Lvl {player2.level})",
+            text=f"{player2.name}\n\nLvl {player2.level}",
             bg=self.colors["bg_light"],
             relief=tk.RAISED,
         )
         btn2.config(
-            text=f"{player1.name}\n(Lvl {player1.level})",
+            text=f"{player1.name}\n\nLvl {player1.level}",
             bg=self.colors["bg_light"],
             relief=tk.RAISED,
         )
@@ -3281,6 +3885,9 @@ class PlayerSelectionUI:
             text=f"{len(self.pending_changes)} change(s) pending - Click Apply to recalculate happiness",
             fg=self.colors["accent_yellow"],
         )
+
+        # Apply happiness-delta preview colors to all buttons in the affected round
+        self._apply_happiness_preview_colors(round_idx)
 
         print(
             f"Swapped {player1.name} and {player2.name} in Round {round_idx + 1} (pending)"
@@ -3461,6 +4068,13 @@ class PlayerSelectionUI:
         if not self.swap_history:
             self.undo_button.config(state=tk.DISABLED)
 
+        # Re-apply happiness-delta preview colors for any rounds still pending.
+        # The undo'd round was just reset to white by refresh_all_rounds(); only
+        # rounds that still have pending swaps need their colours recalculated.
+        still_pending_rounds = set(c["round_idx"] for c in self.pending_changes)
+        for _r in still_pending_rounds:
+            self._apply_happiness_preview_colors(_r)
+
         print(f"Undid swap: {player1.name} and {player2.name} in Round {round_idx + 1}")
 
     def apply_changes(self):
@@ -3523,6 +4137,35 @@ class PlayerSelectionUI:
         self.pending_changes.clear()
         self.swap_history.clear()
 
+        # Update baseline gains and reset all button colors to white now that
+        # happiness has been officially recalculated.
+        self._editor_baseline_gains = {}
+        for _r_idx, _game_round in enumerate(self.session_of_rounds.rounds):
+            _round_baseline = {}
+            for _p in self.session_of_rounds.players:
+                if _r_idx < len(_p.happiness_gained_history):
+                    _round_baseline[_p.name] = _p.happiness_gained_history[_r_idx]
+                else:
+                    _round_baseline[_p.name] = None
+            self._editor_baseline_gains[_r_idx] = _round_baseline
+
+        for _key, _btn in list(self.game_player_buttons.items()):
+            try:
+                _r_idx, _g_idx, _team_id, _row, _col = _key
+                _game_round = self.session_of_rounds.rounds[_r_idx]
+                if _team_id == "not_playing":
+                    _player = _game_round.not_playing[_row * 4 + _col]
+                elif _team_id == "A":
+                    _player = _game_round.games[_g_idx].team_A.players[_col]
+                else:
+                    _player = _game_round.games[_g_idx].team_B.players[_col]
+                _btn.config(
+                    bg=self.colors["bg_light"],
+                    text=f"{_player.name}\n\nLvl {_player.level}",
+                )
+            except Exception:
+                pass
+
         # Disable undo button
         self.undo_button.config(state=tk.DISABLED)
 
@@ -3542,11 +4185,16 @@ class PlayerSelectionUI:
 
         # Append new score to history and refresh the strip
         try:
-            import numpy as _np
+            from core.models import (
+                compute_session_score as _compute_session_score,
+            )  # noqa: PLC0415
 
-            _lw = getattr(self, "_score_history_lambda", 2.4)
-            _h = [p.happiness for p in self.session_of_rounds.players]
-            _new_score = float(_np.mean(_h) - _lw * _np.std(_h))
+            _new_score = _compute_session_score(
+                self.session_of_rounds.players,
+                getattr(self, "_score_obj_name", None),
+                getattr(self, "_score_lw", 2.4),
+                getattr(self, "_score_pct", 10),
+            )
             if hasattr(self, "score_history"):
                 self.score_history.append(_new_score)
             self._render_score_history()
@@ -3584,6 +4232,34 @@ class PlayerSelectionUI:
                     # Refresh plot tabs
                     self.show_plots_window(plots_dir)
                     print("\nPlots regenerated successfully!\n")
+
+                    # Regenerate and refresh the Session Games PNG
+                    try:
+                        from core.charts import (  # noqa: PLC0415
+                            create_session_games_png,
+                            create_session_games_round_images,
+                        )
+
+                        session_games_png = os.path.join(
+                            most_recent, "session_games.png"
+                        )
+                        create_session_games_png(
+                            self.session_of_rounds,
+                            session_games_png,
+                            show_levels=self.png_show_levels_var.get(),
+                        )
+                        _round_imgs = create_session_games_round_images(
+                            self.session_of_rounds,
+                            show_levels=self.png_show_levels_var.get(),
+                        )
+                        self.show_session_games_tab(
+                            session_games_png, round_images=_round_imgs
+                        )
+                        print("Session Games PNG updated successfully!\n")
+                    except Exception as png_error:
+                        print(
+                            f"Warning: Could not update Session Games PNG: {png_error}"
+                        )
 
                     # Update Excel file with new game data
                     print("\nUpdating Excel file with new data...\n")
@@ -4778,6 +5454,11 @@ class PlayerSelectionUI:
         except (TypeError, ValueError):
             lambda_weight = 2.4
 
+        try:
+            percentile = int(self.percentile_var.get())
+        except (TypeError, ValueError):
+            percentile = 10
+
         spectrum_enabled = bool(self.spectrum_var.get())
 
         # Create progress dialog
@@ -4795,6 +5476,7 @@ class PlayerSelectionUI:
             games_per_round,
             level_gap_tol,
             lambda_weight,
+            percentile,
             spectrum_enabled,
             self.preferred_pairs,
         )
@@ -4811,6 +5493,7 @@ class PlayerSelectionUI:
         games_per_round,
         level_gap_tol,
         lambda_weight,
+        percentile,
         spectrum_enabled,
         preferred_pairs=None,
     ):
@@ -4858,7 +5541,7 @@ class PlayerSelectionUI:
                     num_iter=435,
                     lambda_weight=lambda_weight,
                     objective_function=lambda x: main_module.mean_min_max_happiness_objective(
-                        x, lambda_weight=lambda_weight
+                        x, lambda_weight=lambda_weight, percentile=percentile
                     ),
                     weight_same_teammate=5,
                     first_seed=first_seed,
@@ -4893,6 +5576,15 @@ class PlayerSelectionUI:
             self.session_of_rounds = session_of_rounds
             self.chosen_seed = chosen_seed
 
+            # Stamp objective metadata on the live session object so the Games Editor
+            # score history uses the correct lambda weight (these attributes are
+            # normally only set during __setstate__ / unpickling).
+            session_of_rounds._objective_lambda_weight = lambda_weight
+            session_of_rounds._objective_function_name = (
+                "mean_min_max_happiness_objective"
+            )
+            session_of_rounds._objective_percentile = percentile
+
             # Save the session using save_session_of_rounds with default parameters
             try:
                 session_of_rounds.save_session_of_rounds()
@@ -4923,9 +5615,10 @@ class PlayerSelectionUI:
                         plots_dir = os.path.join(most_recent, "plots")
 
                         # Generate and show the Session Games overview PNG
-                        from core.charts import (
+                        from core.charts import (  # noqa: PLC0415
                             create_session_games_png,
-                        )  # noqa: PLC0415
+                            create_session_games_round_images,
+                        )
 
                         session_games_png = os.path.join(
                             most_recent, "session_games.png"
@@ -4936,10 +5629,16 @@ class PlayerSelectionUI:
                             session_games_png,
                             show_levels=self.png_show_levels_var.get(),
                         )
+                        _round_imgs = create_session_games_round_images(
+                            session_of_rounds,
+                            show_levels=self.png_show_levels_var.get(),
+                        )
 
                         # Show interactive games editor then session games tab
                         self.show_games_editor()
-                        self.show_session_games_tab(session_games_png)
+                        self.show_session_games_tab(
+                            session_games_png, round_images=_round_imgs
+                        )
 
                         # Then show happiness/team/spectrum charts in tabbed window
                         self.show_plots_window(plots_dir)
@@ -4967,9 +5666,10 @@ class PlayerSelectionUI:
                                 self.show_games_editor()
                                 self.show_plots_window(plots_dir)
                             # Session Games tab even without plots folder
-                            from core.charts import (
+                            from core.charts import (  # noqa: PLC0415
                                 create_session_games_png,
-                            )  # noqa: PLC0415
+                                create_session_games_round_images,
+                            )
 
                             session_games_png = os.path.join(
                                 most_recent, "session_games.png"
@@ -4979,7 +5679,13 @@ class PlayerSelectionUI:
                                 session_games_png,
                                 show_levels=self.png_show_levels_var.get(),
                             )
-                            self.show_session_games_tab(session_games_png)
+                            _round_imgs_fb = create_session_games_round_images(
+                                session_of_rounds,
+                                show_levels=self.png_show_levels_var.get(),
+                            )
+                            self.show_session_games_tab(
+                                session_games_png, round_images=_round_imgs_fb
+                            )
                 except:
                     pass
 

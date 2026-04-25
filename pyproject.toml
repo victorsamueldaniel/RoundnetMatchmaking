@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "roundnet-matchmaking"
-version = "0.1.0"
+version = "1.2.0"
 description = "Desktop roundnet matchmaking and session generation tool"
 readme = "README.md"
 requires-python = ">=3.10"
