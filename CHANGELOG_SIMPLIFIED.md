@@ -1,7 +1,7 @@
-# What's New
 
-## Version 1.2.0 — April 25, 2026
 
+# Version 1.2.0 — April 25, 2026
+## What's new ?
 ### Reorder rounds after generating a session
 You can now rearrange rounds after a session is generated. Each round appears as its own tile in the Session Games tab — click one round, then click another to swap them. When you're happy with the order, hit **Apply Changes** to lock it in.
 
@@ -14,8 +14,11 @@ A new slider lets you control how many of the lowest-happiness players the algor
 ### Cleaner round images
 Each round image now fits a portrait-style layout, making sessions easier to read when shared as a screenshot or printed.
 
+## BUG FIXES
+### happiness computation
+Happiness Computation is now correctly done, espetially on first swap in games editor. The pair preferences work now better with happiness computation fixed
 ---
 
-## Version 1.1.0 — April 21, 2026
+# Version 1.1.0 — April 21, 2026
 
 - First public release.
