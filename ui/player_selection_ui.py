@@ -21,7 +21,8 @@ from ui.ui_helpers import (
     ConsoleRedirector,
     ProgressDialog,
 )
-
+import locale 
+import functools 
 
 # Modules are loaded lazily inside main() after the splash window is shown.
 main_module = None
@@ -57,7 +58,7 @@ _PLAYERS_FILE_HELP = (
     "  • Name  (or 'Prénom')\n"
     "  • Surname  (or 'Nom')\n"
     "  • Gender  → 'Male' or 'Female' ('Masculin' or 'Féminin')\n"
-    "  • Level  (numeric, e.g. 1.0 – 5.0)\n"
+    "  • Level  (numeric, e.g. 1.0 – 4.0)\n"
     "\n"
     "Optional spectrum columns (scores 0–5, blank → 5):\n"
     "  • Prey, Equilibrist, Challenger, Chill, Hunter, Classist\n"
@@ -999,7 +1000,8 @@ class PlayerSelectionUI:
         self.player_button_states = {}  # Track selected state
 
         # Create player buttons in 6 columns, sorted alphabetically horizontally
-        sorted_players = sorted(self.main_df.index)
+        locale.setlocale(locale.LC_ALL, 'fr_FR')
+        sorted_players = sorted(self.main_df.index,key=functools.cmp_to_key(locale.strcoll))
         num_columns = 6
 
         for idx, player_name in enumerate(sorted_players):
@@ -1473,7 +1475,7 @@ class PlayerSelectionUI:
         levels_row.pack(fill=tk.X, padx=5, pady=(0, 4))
         levels_label = tk.Label(
             levels_row,
-            text="Show levels in session PNG",
+            text="Levels in PNG",
             font=self.fonts["small_bold"],
             bg="#dddddd",
             fg=self.colors["text_dark"],
@@ -4547,15 +4549,20 @@ class PlayerSelectionUI:
 
         # Categorize levels into ranges
         levels = selected_df["Level"]
-        range_1_2 = len(levels[(levels >= 1) & (levels < 2)])
-        range_2_3 = len(levels[(levels >= 2) & (levels < 3)])
-        range_3_4 = len(levels[(levels >= 3) & (levels <= 4)])
+        highest_level_possible = self.main_df["Level"].max()
+        lowest_level_possible = self.main_df["Level"].min()
+        first_threshold = round(lowest_level_possible + (highest_level_possible - lowest_level_possible) / 3,1)
+        second_threshold = round(lowest_level_possible + 2 * (highest_level_possible - lowest_level_possible) / 3,1)
 
-        self.info_text.insert(tk.END, f"  Level 1-2: {range_1_2} player(s)\n")
-        self.info_text.insert(tk.END, f"  Level 2-3: {range_2_3} player(s)\n")
-        self.info_text.insert(tk.END, f"  Level 3-4: {range_3_4} player(s)\n")
+        range_low = len(levels[levels < first_threshold])
+        range_mid = len(levels[(levels >= first_threshold) & (levels < second_threshold)])
+        range_high = len(levels[levels >= second_threshold])
 
-        self.info_text.insert(tk.END, f"Avg Level: {selected_df['Level'].mean():.2f}\n")
+        self.info_text.insert(tk.END, f"  Level below {first_threshold:.1f}: {range_low} player(s)\n")
+        self.info_text.insert(tk.END, f"  Level {first_threshold:.1f}-{second_threshold:.1f}: {range_mid} player(s)\n")
+        self.info_text.insert(tk.END, f"  Level {second_threshold:.1f}-{highest_level_possible:.1f}: {range_high} player(s)\n")
+
+        self.info_text.insert(tk.END, f"Avg Level: {selected_df['Level'].mean():.1f}\n")
         self.info_text.insert(tk.END, "=" * 40 + "\n\n")
 
         # Display each player AFTER level distribution
@@ -5004,16 +5011,16 @@ class PlayerSelectionUI:
         ).grid(row=2, column=0, sticky=tk.W, pady=5)
         if edit_mode:
             try:
-                init_level = float(player_data.get("Level", 1.5))
+                init_level = float(player_data.get("Level", 1))
             except (TypeError, ValueError):
-                init_level = 1.5
+                init_level = 1
         else:
-            init_level = 1.5
+            init_level = 1
         level_var = tk.DoubleVar(value=init_level)
         tk.Spinbox(
             form_frame,
             from_=0,
-            to=4,
+            to=10000,
             increment=0.1,
             textvariable=level_var,
             font=self.fonts["normal"],
@@ -5139,9 +5146,9 @@ class PlayerSelectionUI:
                     base_gender = "Male"
                 gender_var.set(base_gender)
                 try:
-                    level_var.set(float(base.get("Level", 1.5)))
+                    level_var.set(float(base.get("Level", 1)))
                 except (TypeError, ValueError):
-                    level_var.set(1.5)
+                    level_var.set(1)
                 try:
                     happiness_var.set(int(base.get("Happiness", 0)))
                 except (TypeError, ValueError):
@@ -5260,6 +5267,7 @@ class PlayerSelectionUI:
             self.main_df = self.main_df.drop(name)
         new_row_df = pd.DataFrame([new_player_data], index=[name])
         self.main_df = pd.concat([self.main_df, new_row_df])
+
 
         # Get the scrollable frame (parent of player buttons)
         scrollable_frame = getattr(self, "player_scrollable_frame", None)
@@ -5452,12 +5460,12 @@ class PlayerSelectionUI:
         try:
             lambda_weight = float(self.lambda_weight_var.get())
         except (TypeError, ValueError):
-            lambda_weight = 2.4
+            lambda_weight = 2
 
         try:
             percentile = int(self.percentile_var.get())
         except (TypeError, ValueError):
-            percentile = 10
+            percentile = 33
 
         spectrum_enabled = bool(self.spectrum_var.get())
 

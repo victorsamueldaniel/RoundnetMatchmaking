@@ -3,7 +3,10 @@
 All notable changes to this project are documented in this file.
 
 ## [Unreleased]
-
+## [1.3.0] -
+#### bug fix
+- Changed alphabetical ordering, so accented letters come before the next one (Like "Aliénor" would come before "Alissa") in players frame
+- Spinbox of player level in player edit dialog used to be caped at 4, it is now caped at 10'000
 ## [1.2.0] - 2026-04-25
 ### Added
 - Interactive round reordering in the Session Games tab: rounds are displayed as clickable tiles; click two rounds to swap their order, then apply the change.

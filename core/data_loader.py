@@ -1,4 +1,5 @@
-﻿"""
+﻿#%%
+"""
 data_loader.py — loads and processes the single combined Excel data source.
 
 Exports:
@@ -221,3 +222,4 @@ try:
     main_df = load_data()
 except Exception as _load_err:
     main_df = None  # type: ignore[assignment]
+
