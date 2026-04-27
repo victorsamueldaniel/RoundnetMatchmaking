@@ -42,10 +42,12 @@ ui/dist/
 ui/OLD_dist/
 ui/*.spec
 
+
 # Runtime outputs
 sessions/
 ui/sessions/
-xlsx/xlsx_config.json
+xlsx/
+fusion_xlsx/
 
 # Misc generated archives/logs
 *.log
