@@ -6,6 +6,8 @@ import tkinter as tk
 from tkinter import messagebox
 from PIL import Image, ImageTk
 
+from ui.tab_functions import session_games_out_of_place_count
+
 main_module = None
 
 
@@ -378,9 +380,7 @@ class SessionGamesTabMixin:
                 _render()
                 # Update button states and status label
                 if self._sg_has_pending_swaps:
-                    n_swapped = sum(
-                        1 for i, v in enumerate(self._sg_round_order) if i != v
-                    )
+                    n_swapped = session_games_out_of_place_count(self._sg_round_order)
                     apply_btn.config(state=tk.NORMAL)
                     reset_btn.config(state=tk.NORMAL)
                     status_lbl.config(

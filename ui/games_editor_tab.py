@@ -5,6 +5,8 @@ import os
 import tkinter as tk
 from tkinter import messagebox
 
+from ui.tab_functions import games_editor_delta_to_bg
+
 main_module = None
 
 
@@ -686,29 +688,7 @@ class GamesEditorTabMixin:
         Saturation is interpolated linearly up to ±5 units, then capped.
         Negative deltas also return a text suffix like '[−2.0]'.
         """
-        THRESHOLD = 0.05
-        CAP = 5.0
-
-        if abs(delta) < THRESHOLD:
-            return "#FFFFFF", None
-
-        t = min(abs(delta) / CAP, 1.0)  # 0..1
-
-        def lerp_channel(lo, hi, t):
-            return int(lo + (hi - lo) * t)
-
-        if delta > 0:
-            # White (#FFFFFF) → Green (#00CC44)
-            r = lerp_channel(255, 0, t)
-            g = lerp_channel(255, 204, t)
-            b = lerp_channel(255, 68, t)
-            return f"#{r:02X}{g:02X}{b:02X}", f"[{delta:+.1f}]"
-        else:
-            # White (#FFFFFF) → Red (#FF3322)
-            r = lerp_channel(255, 255, t)
-            g = lerp_channel(255, 51, t)
-            b = lerp_channel(255, 34, t)
-            return f"#{r:02X}{g:02X}{b:02X}", f"[{delta:+.1f}]"
+        return games_editor_delta_to_bg(delta)
 
     def _preview_happiness_delta(self, round_idx):
         """Simulate recalculate_happiness for round_idx without permanently changing state.

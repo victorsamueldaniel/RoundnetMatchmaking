@@ -1,3 +1,4 @@
+# %%
 """Main UI orchestrator for Roundnet Matchmaking."""
 
 import sys
@@ -35,7 +36,6 @@ class PlayerSelectionUI(
     """Composed UI class built from tab mixins."""
 
 
-
 def main():
     """Main function to run the UI."""
     global main_module, ftf_module
@@ -58,7 +58,9 @@ def main():
                 del sys.modules[_key]
 
         main_module = load_module("main", "core/main.py", force_reload=True)
-        ftf_module = load_module("fine_tuning_functions", "core/fine_tuning_functions.py")
+        ftf_module = load_module(
+            "fine_tuning_functions", "core/fine_tuning_functions.py"
+        )
 
         # Share runtime-loaded core main module with tab mixins.
         session_generation_tab.main_module = main_module

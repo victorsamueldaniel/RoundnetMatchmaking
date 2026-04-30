@@ -1,17 +1,16 @@
 """Plots tab controller."""
 
 import os
-import glob
 
 import tkinter as tk
 from PIL import Image, ImageTk
+
+from ui.tab_functions import plots_find_png_files
 
 
 class PlotsTabMixin:
     def show_plots_window(self, plots_dir):
         """Add plot tabs to the main notebook"""
-        import glob
-
         # Remove existing plot tabs (keep Session Generation at index 0, Session Games
         # at index 1 if it exists, and Games Editor if it exists)
         games_editor_exists = False
@@ -29,7 +28,7 @@ class PlotsTabMixin:
             self.main_notebook.forget(num_tabs_to_keep)
 
         # Find all PNG files in the plots directory
-        png_files = glob.glob(os.path.join(plots_dir, "*.png"))
+        png_files = plots_find_png_files(plots_dir)
 
         if not png_files:
             print("No plot files found to display.")

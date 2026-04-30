@@ -319,6 +319,7 @@ def _ask_missing_values(
     dlg.protocol("WM_DELETE_WINDOW", _on_ok)
     root.wait_window(dlg)
 
+
 def _save_df_to_xlsx(df: pd.DataFrame, path: str) -> None:
     """Write key player columns back to xlsx (index = NameSurname)."""
     save_cols = [
@@ -341,6 +342,7 @@ def _save_df_to_xlsx(df: pd.DataFrame, path: str) -> None:
         else df.reset_index()[["NameSurname"] + present]
     )
     out.to_excel(path, index=False)
+
 
 def _run_setup_wizard(root):
     """
@@ -765,6 +767,7 @@ def _run_setup_wizard(root):
     root.wait_window(win)
     return result["ok"]
 
+
 def _show_loading_window(root):
     """Display a splash/loading window while the app initialises."""
     splash = tk.Toplevel(root)
@@ -806,6 +809,7 @@ def _show_loading_window(root):
 
     root.update()
     return splash
+
 
 def _ensure_windows_tcl_env():
     """Set TCL/TK runtime paths on Windows when Python cannot auto-resolve them."""

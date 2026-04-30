@@ -16,6 +16,7 @@ from ui.ui_helpers import (
     ConsoleRedirector,
     ProgressDialog,
 )
+from ui.tab_functions import session_generation_round_type_priority
 
 main_module = None
 
@@ -2667,21 +2668,12 @@ class SessionGenerationTabMixin:
 
             # Compute rounds_reordering once: internally generate level rounds first for
             # better optimization, then reorder back to the user-intended display order.
-            def _round_type_priority(type_pref):
-                if isinstance(type_pref, dict):
-                    round_type = type_pref.get("type")
-                else:
-                    round_type = type_pref
-                round_type = round_type.lower() if isinstance(round_type, str) else None
-                if round_type == "level":
-                    return 0
-                if round_type == "balanced":
-                    return 1
-                return 2
-
             generated_order_indices = sorted(
                 range(amount_of_rounds),
-                key=lambda idx: (_round_type_priority(type_preferences[idx]), idx),
+                key=lambda idx: (
+                    session_generation_round_type_priority(type_preferences[idx]),
+                    idx,
+                ),
             )
             generated_pos_by_original_idx = {
                 original_idx: generated_pos + 1

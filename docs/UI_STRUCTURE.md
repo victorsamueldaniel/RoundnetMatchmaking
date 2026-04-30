@@ -111,6 +111,10 @@ This file centralizes standalone functions and shared constants:
 - XLSX writeback helper.
 - Splash window helper.
 - Windows Tcl/Tk environment helper.
+- Session Generation helper: round type priority ordering.
+- Games Editor helper: happiness delta to color mapping.
+- Session Games helper: out-of-place round counting.
+- Plots helper: plot PNG file discovery.
 
 ## Compatibility and Entry Points
 
