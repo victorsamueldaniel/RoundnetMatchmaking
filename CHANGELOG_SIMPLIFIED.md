@@ -1,5 +1,4 @@
 
-
 # Version 1.2.0 — April 25, 2026
 ## What's new ?
 ### Reorder rounds after generating a session

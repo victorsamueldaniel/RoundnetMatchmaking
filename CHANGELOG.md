@@ -3,7 +3,9 @@
 All notable changes to this project are documented in this file.
 
 ## [Unreleased]
-
+## [1.3.0] - ...
+### changed
+- separated player_selection_ui.py in several .py files. One main called roundnet_matchmaking_ui, one for each tab one one for functions
 ## [1.2.0] - 2026-04-25
 ### Added
 - Interactive round reordering in the Session Games tab: rounds are displayed as clickable tiles; click two rounds to swap their order, then apply the change.

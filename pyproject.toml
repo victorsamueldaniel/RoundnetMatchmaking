@@ -47,7 +47,7 @@ ui = [
 ]
 
 [project.scripts]
-roundnet-matchmaking = "ui.player_selection_ui:main"
+roundnet-matchmaking = "ui.roundnet_matchmaking_ui:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

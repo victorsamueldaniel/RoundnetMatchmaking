@@ -29,7 +29,7 @@ import time
 from pathlib import Path
 
 APP_NAME = "RoundnetMatchmaking"
-ENTRYPOINT = "ui/player_selection_ui.py"
+ENTRYPOINT = "ui/roundnet_matchmaking_ui.py"
 ICON_ICO = "ui/logo.ico"
 ICON_PNG = "ui/logo.png"
 
@@ -50,6 +50,13 @@ FILES_TO_COPY = [
     "core/fine_tuning_functions.py",
     # UI package
     "ui/__init__.py",
+    "ui/roundnet_matchmaking_ui.py",
+    "ui/session_generation_tab.py",
+    "ui/games_editor_tab.py",
+    "ui/session_games_tab.py",
+    "ui/plots_tab.py",
+    "ui/tab_functions.py",
+    "ui/player_selection_ui.py",  # compatibility wrapper
     "ui/ui_helpers.py",
     "ui/logo.png",
 ]
