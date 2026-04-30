@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import messagebox
 from PIL import Image, ImageTk
 
-from ui.tab_functions import session_games_out_of_place_count
+from ui.functions.tab_functions import session_games_out_of_place_count
 
 main_module = None
 

@@ -31,9 +31,9 @@ Then select that kernel before running notebook cells.
 
 Preferred launch mode:
 - Use the installed command `roundnet-matchmaking`.
-- For development, use module execution from repo root: `python -m ui.roundnet_matchmaking_ui`.
-- Legacy compatibility path is still available: `python -m ui.player_selection_ui`.
-- Avoid direct file execution (`python ui/roundnet_matchmaking_ui.py`) because it can bypass package import context.
+- For development, use module execution from repo root: `python -m ui.main.roundnet_matchmaking_ui`.
+- Legacy compatibility path is still available: `python -m ui.main.player_selection_ui`.
+- Avoid direct file execution (`python ui/main/roundnet_matchmaking_ui.py`) because it can bypass package import context.
 - For the desktop UI, prefer launching from a terminal (not from a notebook cell).
 
 ## UI Troubleshooting (Windows)
@@ -89,7 +89,7 @@ pytest -q
 Install UI/build extras and run the build script:
 ```bash
 python -m pip install -e ".[ui]"
-python ui/build_exe.py
+python ui/main/build_exe.py
 ```
 The build output is created under `ui/dist/RoundnetMatchmaking/`.
 

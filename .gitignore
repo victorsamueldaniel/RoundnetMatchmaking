@@ -45,8 +45,8 @@ ui/*.spec
 
 # Runtime outputs
 sessions/
-ui/sessions/
-xlsx/
+ui/main/sessions/
+ui/xlsx/
 fusion_xlsx/
 
 # Misc generated archives/logs

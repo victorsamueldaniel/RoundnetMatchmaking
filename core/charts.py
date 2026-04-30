@@ -3,6 +3,7 @@
 import datetime
 import os
 from collections import defaultdict
+import re
 
 import matplotlib
 
@@ -919,6 +920,21 @@ def create_all_session_charts(
     return fig1, fig2, fig3
 
 
+def _playershort(player):
+    player_name_surname_split = re.split(r"(?=[A-Z])", player)
+    player_first_name = player_name_surname_split[1]
+
+    if len(player_name_surname_split) == 3:
+        player_surname = player_name_surname_split[2]
+        length_surname = len(player_surname)
+        return (
+            player_first_name[: min(8 - length_surname, len(player_first_name))]
+            + player_surname
+        )
+    else:
+        return player[: min(8, len(player))]
+
+
 def create_session_games_png(
     session_of_rounds, save_path: str, show_levels: bool = False
 ) -> None:
@@ -1129,26 +1145,42 @@ def create_session_games_png(
             row = [
                 (str(g_idx + 1), row_bg, "#333333", False),
                 (
-                    f"{pA1.name}  ({pA1.level:.1f})" if show_levels else pA1.name,
+                    (
+                        f"{_playershort(pA1.name)}\n({pA1.level:.1f})"
+                        if show_levels
+                        else _playershort(pA1.name)
+                    ),
                     C_TEAM_A,
                     "#1A3A6C",
                     False,
                 ),
                 (
-                    f"{pA2.name}  ({pA2.level:.1f})" if show_levels else pA2.name,
+                    (
+                        f"{_playershort(pA2.name)}\n({pA2.level:.1f})"
+                        if show_levels
+                        else _playershort(pA2.name)
+                    ),
                     C_TEAM_A,
                     "#1A3A6C",
                     False,
                 ),
                 ("VS", C_VS, "#333333", True),
                 (
-                    f"{pB1.name}  ({pB1.level:.1f})" if show_levels else pB1.name,
+                    (
+                        f"{_playershort(pB1.name)}\n({pB1.level:.1f})"
+                        if show_levels
+                        else _playershort(pB1.name)
+                    ),
                     C_TEAM_B,
                     "#5C1A00",
                     False,
                 ),
                 (
-                    f"{pB2.name}  ({pB2.level:.1f})" if show_levels else pB2.name,
+                    (
+                        f"{_playershort(pB2.name)}\n({pB2.level:.1f})"
+                        if show_levels
+                        else _playershort(pB2.name)
+                    ),
                     C_TEAM_B,
                     "#5C1A00",
                     False,
@@ -1161,7 +1193,13 @@ def create_session_games_png(
             for col_i, ((txt, bg, fg, bold), x0, w) in enumerate(
                 zip(row, col_xs, col_ws)
             ):
-                fs = 9.5 if col_i in _NAME_COLS else 7.0
+                if _NAME_COLS:
+                    if show_levels:
+                        fs = 8.0
+                    else:
+                        fs = 9.5
+                else:
+                    fs = 7.0
                 _cell(x0, y, w, ROW_H, txt, bg, fg=fg, bold=bold, fs=fs)
             y += ROW_H
 
@@ -1299,6 +1337,7 @@ def create_session_games_round_images(
         "mixed": "mix",
         "female": "F",
         "male": "M",
+        "open": "opn",
     }
     _NAME_COLS = {1, 2, 4, 5}
 
@@ -1391,6 +1430,7 @@ def create_session_games_round_images(
         # Game rows
         for g_idx, game in enumerate(rnd.games):
             row_bg = C_WHITE if g_idx % 2 == 0 else C_ROW2
+
             pA1 = game.team_A.player_A
             pA2 = game.team_A.player_B
             pB1 = game.team_B.player_A
@@ -1406,26 +1446,42 @@ def create_session_games_round_images(
             row_data = [
                 (str(g_idx + 1), row_bg, "#333333", False),
                 (
-                    f"{pA1.name}  ({pA1.level:.1f})" if show_levels else pA1.name,
+                    (
+                        f"{_playershort(pA1.name)}\n({pA1.level:.1f})"
+                        if show_levels
+                        else _playershort(pA1.name)
+                    ),
                     C_TEAM_A,
                     "#1A3A6C",
                     False,
                 ),
                 (
-                    f"{pA2.name}  ({pA2.level:.1f})" if show_levels else pA2.name,
+                    (
+                        f"{_playershort(pA2.name)}\n({pA2.level:.1f})"
+                        if show_levels
+                        else _playershort(pA2.name)
+                    ),
                     C_TEAM_A,
                     "#1A3A6C",
                     False,
                 ),
                 ("VS", C_VS, "#333333", True),
                 (
-                    f"{pB1.name}  ({pB1.level:.1f})" if show_levels else pB1.name,
+                    (
+                        f"{_playershort(pB1.name)}\n({pB1.level:.1f})"
+                        if show_levels
+                        else _playershort(pB1.name)
+                    ),
                     C_TEAM_B,
                     "#5C1A00",
                     False,
                 ),
                 (
-                    f"{pB2.name}  ({pB2.level:.1f})" if show_levels else pB2.name,
+                    (
+                        f"{_playershort(pB2.name)}\n({pB2.level:.1f})"
+                        if show_levels
+                        else _playershort(pB2.name)
+                    ),
                     C_TEAM_B,
                     "#5C1A00",
                     False,
@@ -1436,7 +1492,13 @@ def create_session_games_round_images(
             for col_i, ((txt, bg, fg, bold), x0, w) in enumerate(
                 zip(row_data, col_xs, col_ws)
             ):
-                fs = 9.5 if col_i in _NAME_COLS else 7.0
+                if _NAME_COLS:
+                    if show_levels:
+                        fs = 8.0
+                    else:
+                        fs = 9.5
+                else:
+                    fs = 7.0
                 _cell(x0, y, w, ROW_H, txt, bg, fg=fg, bold=bold, fs=fs)
             y += ROW_H
 

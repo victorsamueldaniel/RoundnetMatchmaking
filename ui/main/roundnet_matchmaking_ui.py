@@ -7,20 +7,22 @@ import os
 import tkinter as tk
 from tkinter import messagebox
 
-from ui.ui_helpers import current_dir, load_module
-from ui.tab_functions import (
+from ui.functions.ui_helpers import current_dir, load_module
+from ui.functions.setup_wizard import (
     _XLSX_CONFIG_PATH,
     _run_setup_wizard,
+)
+from ui.functions.tab_functions import (
     _show_loading_window,
     _ensure_windows_tcl_env,
 )
-from ui.session_generation_tab import SessionGenerationTabMixin
-from ui.games_editor_tab import GamesEditorTabMixin
-from ui.session_games_tab import SessionGamesTabMixin
-from ui.plots_tab import PlotsTabMixin
-import ui.session_generation_tab as session_generation_tab
-import ui.games_editor_tab as games_editor_tab
-import ui.session_games_tab as session_games_tab
+from ui.tabs.session_generation_tab import SessionGenerationTabMixin
+from ui.tabs.games_editor_tab import GamesEditorTabMixin
+from ui.tabs.session_games_tab import SessionGamesTabMixin
+from ui.tabs.plots_tab.plots_tab import PlotsTabMixin
+import ui.tabs.session_generation_tab as session_generation_tab
+import ui.tabs.games_editor_tab as games_editor_tab
+import ui.tabs.session_games_tab as session_games_tab
 
 
 main_module = None

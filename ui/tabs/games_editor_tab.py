@@ -5,7 +5,7 @@ import os
 import tkinter as tk
 from tkinter import messagebox
 
-from ui.tab_functions import games_editor_delta_to_bg
+from ui.functions.tab_functions import games_editor_delta_to_bg
 
 main_module = None
 

@@ -10,13 +10,13 @@ from ctypes import wintypes
 from PIL import Image, ImageTk
 import tkinter.font as tkfont
 
-from ui.ui_helpers import (
+from ui.functions.ui_helpers import (
     current_dir,
     set_window_icon_from_logo,
     ConsoleRedirector,
     ProgressDialog,
 )
-from ui.tab_functions import session_generation_round_type_priority
+from ui.functions.tab_functions import session_generation_round_type_priority
 
 main_module = None
 

@@ -1,4 +1,4 @@
-﻿#%%
+﻿# %%
 """
 data_loader.py — loads and processes the single combined Excel data source.
 
@@ -21,9 +21,13 @@ from difflib import SequenceMatcher
 if getattr(sys, "frozen", False):
     _xlsx_dir = os.path.join(os.path.dirname(sys.executable), "xlsx")
 else:
-    _xlsx_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "xlsx"
-    )
+    _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _ui_xlsx_dir = os.path.join(_project_root, "ui", "xlsx")
+    _root_xlsx_dir = os.path.join(_project_root, "xlsx")
+    if os.path.isdir(_ui_xlsx_dir) or not os.path.isdir(_root_xlsx_dir):
+        _xlsx_dir = _ui_xlsx_dir
+    else:
+        _xlsx_dir = _root_xlsx_dir
 
 # Config file written by the first-run setup wizard.
 XLSX_CONFIG_PATH = os.path.join(_xlsx_dir, "xlsx_config.json")
@@ -222,4 +226,3 @@ try:
     main_df = load_data()
 except Exception as _load_err:
     main_df = None  # type: ignore[assignment]
-

@@ -19,8 +19,10 @@ from tkinter import ttk
 if getattr(sys, "frozen", False):
     current_dir = os.path.dirname(sys.executable)
 elif "__file__" in globals():
-    # ui_helpers.py lives in ui/; project root is one level up
-    current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # ui_helpers.py lives in ui/functions/; project root is two levels up
+    current_dir = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
 else:
     current_dir = os.getcwd()
 
