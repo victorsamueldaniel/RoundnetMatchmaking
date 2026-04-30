@@ -6,7 +6,7 @@ All notable changes to this project are documented in this file.
 ## [1.3.0] -
 
 ### changed
-- separated player_selection_ui.py in several .py files. One main called roundnet_matchmaking_ui, one for each tab (games_editor_tab.py, plots_tab.py, session_games_tab.py, session_generation_tab.py, tab_functions.py),one for functions (ui_functions.py)
+- separated player_selection_ui.py in several .py files. One main called roundnet_matchmaking_ui, one for each tab (games_editor_tab.py, plots_tab.py, session_games_tab.py, session_generation_tab.py),two for functions (tab_functions.py and ui_helpers.py)
 #### bug fix
 - Changed alphabetical ordering, so accented letters come before the next one (Like "Aliénor" would come before "Alissa") in players frame
 - Spinbox of player level in player edit dialog used to be caped at 4, it is now caped at 10'000
