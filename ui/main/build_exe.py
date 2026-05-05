@@ -8,12 +8,14 @@ Examples:
     python build_exe.py
     python build_exe.py --version 1.2.0
         -> dist folder: RoundnetMatchmaking_1_2_0/
-        -> exe:         RoundnetMatchmaking_1_2_0.exe
+        -> Windows exe: RoundnetMatchmaking_1_2_0.exe
+        -> macOS app:   RoundnetMatchmaking_1_2_0.app
+        -> Linux bin:   RoundnetMatchmaking_1_2_0
 
 What it does:
-- builds a one-dir executable with PyInstaller
-- uses logo.ico as app icon (or creates it from logo.png if Pillow is installed)
-- copies required data files/modules next to RoundnetMatchmaking.exe
+- builds a one-dir executable with PyInstaller (cross-platform)
+- uses logo.ico (Windows/Linux) or logo.icns (macOS) as app icon
+- copies required data files/modules next to the executable
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ from pathlib import Path
 APP_NAME = "RoundnetMatchmaking"
 ENTRYPOINT = "ui/main/roundnet_matchmaking_ui.py"
 ICON_ICO = "ui/logo.ico"
+ICON_ICNS = "ui/logo.icns"
 ICON_PNG = "ui/logo.png"
 
 FILES_TO_COPY = [
@@ -82,7 +85,6 @@ HIDDEN_IMPORTS = [
     "pandas",
     "numpy",
     "openpyxl",
-    "pyperclip",
     "seaborn",
     "networkx",
     "difflib",  # used by data_loader.validate_xlsx / SequenceMatcher
@@ -151,9 +153,7 @@ EXCLUDE_MODULES = [
     "jinja2",
 ]
 
-REQUIRED_PYTHON_MODULES = {
-    "pyperclip": "pyperclip>=1.8.2",
-}
+REQUIRED_PYTHON_MODULES: dict[str, str] = {}
 
 
 def _find_versioned_dir(parent: Path | None, prefix: str) -> Path | None:
@@ -206,9 +206,9 @@ def get_tk_bundle_args() -> list[str]:
         tk_dir = _find_versioned_dir(tcl_parent, "tk")
 
     if tcl_dir and tcl_dir.is_dir():
-        args.append(f"--add-data={tcl_dir};_tcl_data")
+        args.append(f"--add-data={tcl_dir}{os.pathsep}_tcl_data")
     if tk_dir and tk_dir.is_dir():
-        args.append(f"--add-data={tk_dir};_tk_data")
+        args.append(f"--add-data={tk_dir}{os.pathsep}_tk_data")
 
     if os.name == "nt":
         for root in search_roots:
@@ -218,13 +218,13 @@ def get_tk_bundle_args() -> list[str]:
             for dll_name in ("tcl86t.dll", "tk86t.dll", "tcl87t.dll", "tk87t.dll"):
                 dll_path = dll_dir / dll_name
                 if dll_path.is_file():
-                    args.append(f"--add-binary={dll_path};.")
+                    args.append(f"--add-binary={dll_path}{os.pathsep}.")
 
     tk_ext_spec = importlib.util.find_spec("_tkinter")
     if tk_ext_spec and tk_ext_spec.origin:
         tk_ext_path = Path(tk_ext_spec.origin)
         if tk_ext_path.is_file():
-            args.append(f"--add-binary={tk_ext_path};.")
+            args.append(f"--add-binary={tk_ext_path}{os.pathsep}.")
 
     return args
 
@@ -262,15 +262,31 @@ def ensure_required_python_modules() -> None:
 
 
 def ensure_icon(project_root: Path) -> Path | None:
-    ico_path = project_root / ICON_ICO
     png_path = project_root / ICON_PNG
 
+    if sys.platform == "darwin":
+        icns_path = project_root / ICON_ICNS
+        if icns_path.exists():
+            return icns_path
+        if not png_path.exists():
+            return None
+        try:
+            from PIL import Image
+
+            img = Image.open(png_path).convert("RGBA")
+            img.save(icns_path, format="ICNS")
+            print("Created logo.icns from logo.png")
+            return icns_path
+        except Exception as exc:
+            print(f"[WARN] Could not generate logo.icns from logo.png: {exc}")
+            return None
+
+    # Windows / Linux: use .ico
+    ico_path = project_root / ICON_ICO
     if ico_path.exists():
         return ico_path
-
     if not png_path.exists():
         return None
-
     try:
         from PIL import Image
 
@@ -457,7 +473,12 @@ def build_exe(version: str | None = None) -> bool:
     )
     print(f"  [OK] {zip_path}.zip")
 
-    exe_path = dist_app_dir / f"{app_name}.exe"
+    if sys.platform == "darwin":
+        exe_path = dist_app_dir / f"{app_name}.app"
+    elif sys.platform == "win32":
+        exe_path = dist_app_dir / f"{app_name}.exe"
+    else:
+        exe_path = dist_app_dir / app_name
     print("\nBuild completed.")
     print(f"Executable: {exe_path}")
     print("Distribute the full folder or the zip:")

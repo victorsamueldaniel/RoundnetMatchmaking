@@ -131,14 +131,6 @@ def str_to_ascii(string_to_convert):
     import math
     from unidecode import unidecode
 
-    pyperclip = None
-    try:
-        import pyperclip as _pyperclip
-
-        pyperclip = _pyperclip
-    except Exception:
-        pyperclip = None
-
     string_to_convert_copy = string_to_convert
 
     # make all uppercase and remove accents
@@ -194,12 +186,6 @@ def str_to_ascii(string_to_convert):
         str_out = ("#" * line_length + "#\n") * 4 + str_out
         str_out = str_out + "\n" + ("#" * line_length + "#\n") * 4
 
-    if pyperclip is not None:
-        try:
-            pyperclip.copy(str_out)
-            pyperclip.paste()
-        except Exception:
-            pass
     print(str_out)
 
 

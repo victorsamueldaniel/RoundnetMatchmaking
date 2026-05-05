@@ -13,11 +13,15 @@ authors = [{ name = "RoundnetMatchmaking Maintainers" }]
 keywords = ["roundnet", "matchmaking", "scheduling", "sports"]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Environment :: MacOS X",
     "Environment :: Win32 (MS Windows)",
+    "Environment :: X11 Applications",
     "Intended Audience :: End Users/Desktop",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: MacOS",
     "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -27,7 +31,6 @@ dependencies = [
     "pandas>=1.5.0",
     "matplotlib>=3.7.0",
     "openpyxl>=3.1.0",
-    "pyperclip>=1.8.2",
     "Pillow>=10.0.0",
     "seaborn>=0.12.0",
     "networkx>=3.0",
@@ -43,7 +46,7 @@ dev = [
     "pre-commit>=3.7.0",
 ]
 ui = [
-    "pyinstaller>=5.13.0; platform_system == 'Windows'",
+    "pyinstaller>=5.13.0",
 ]
 
 [project.scripts]

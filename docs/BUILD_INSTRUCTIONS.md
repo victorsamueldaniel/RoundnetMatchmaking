@@ -3,9 +3,11 @@
 This repository is source-first. Generated artifacts are excluded from version control
 and should be published through GitHub Releases.
 
+Builds are supported on **Windows**, **macOS (arm64 and x86_64)**, and **Linux**.
+
 ## Prerequisites
 
-1. Python 3.10 or higher.
+1. Python 3.10 or higher with Tcl/Tk enabled.
 2. A virtual environment (recommended).
 3. Project dependencies installed with UI/build extras.
 
@@ -22,26 +24,54 @@ python -m pip install -e ".[ui]"
 From the repository root:
 
 ```bash
-python ui/build_exe.py
+python ui/main/build_exe.py
 ```
 
-The build script creates a one-dir bundle at:
+The build script creates a one-dir bundle under `ui/main/dist/`:
 
-```text
-ui/dist/RoundnetMatchmaking/
-```
+| Platform | Output |
+|---|---|
+| Windows | `ui/main/dist/RoundnetMatchmaking/RoundnetMatchmaking.exe` |
+| macOS | `ui/main/dist/RoundnetMatchmaking/RoundnetMatchmaking.app` |
+| Linux | `ui/main/dist/RoundnetMatchmaking/RoundnetMatchmaking` |
+
+## Automated Multi-Platform Builds (GitHub Actions)
+
+Pushing a tag matching `v*.*.*` triggers the `.github/workflows/build.yml` workflow.
+Four parallel jobs run on:
+
+| Job | Runner | Artifact suffix |
+|---|---|---|
+| Windows | `windows-latest` | `_win_x64.zip` |
+| macOS Apple Silicon | `macos-latest` | `_mac_arm64.zip` |
+| macOS Intel | `macos-13` | `_mac_x86.zip` |
+| Linux | `ubuntu-latest` | `_linux_x86_64.zip` |
+
+All four zips are uploaded automatically to the GitHub Release created by the tag.
 
 ## Distribution Workflow
 
-1. Build locally with `python ui/build_exe.py`.
-2. Zip the folder `ui/dist/RoundnetMatchmaking/`.
-3. Upload the zip as a GitHub Release artifact.
+1. Create and push a version tag: `git tag v1.2.0 && git push origin v1.2.0`.
+2. GitHub Actions builds all four platform artifacts automatically.
+3. Zips appear as assets on the GitHub Release page.
 
 Do not commit generated folders such as:
 
-- `ui/build/`
-- `ui/dist/`
-- `ui/OLD_dist/`
+- `ui/main/build/`
+- `ui/main/dist/`
+- `ui/main/OLD_dist/`
+
+## macOS — Gatekeeper (Unsigned App)
+
+The distributed `.app` bundle is not notarised. On first launch macOS shows
+*"App can't be opened because it's from an unidentified developer"*.
+
+Workaround for end users:
+1. Right-click (or Control-click) the `.app` file.
+2. Select **Open** from the context menu.
+3. Click **Open** in the confirmation dialog.
+
+To remove this friction entirely, notarisation requires an Apple Developer account ($99/year).
 
 ## Troubleshooting
 
@@ -95,10 +125,11 @@ python -m pip install -e ".[ui]"
 ### Locked output folder on Windows
 
 - Close explorer windows or running executables from prior builds.
-- Re-run `python ui/build_exe.py`.
+- Re-run `python ui/main/build_exe.py`.
 
 ## Notes for Maintainers
 
-- Build behavior is defined in `ui/build_exe.py`.
+- Build behaviour is defined in `ui/main/build_exe.py`.
 - Runtime sources copied into the executable bundle are configured in
   `FILES_TO_COPY` inside that script.
+- The CI workflow is defined in `.github/workflows/build.yml`.

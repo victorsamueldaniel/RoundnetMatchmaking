@@ -2248,17 +2248,6 @@ class SessionOfRounds:
         minimum_team_repeats=2,
         minimum_opponent_repeats=3,
     ):
-        pyperclip = None
-        clipboard_issue = None
-        clipboard_copied = False
-        try:
-            import pyperclip as _pyperclip
-
-            pyperclip = _pyperclip
-        except Exception as exc:
-            pyperclip = None
-            clipboard_issue = f"pyperclip import failed: {exc}"
-
         # ANSI color codes
         class Colors:
             HEADER = "\033[95m"
@@ -2555,29 +2544,7 @@ class SessionOfRounds:
             output.append(player_sad_text)
             colored_output.append(Colors.FAIL + player_sad_text + Colors.ENDC)
 
-        if pyperclip is not None:
-            try:
-                pyperclip.copy("\n".join(output))
-                clipboard_copied = True
-            except Exception as exc:
-                pyperclip = None
-                clipboard_issue = f"clipboard copy failed: {exc}"
         print("\n".join(colored_output))  # Print colored version to terminal
-        if clipboard_copied:
-            print(
-                Colors.OKGREEN
-                + Colors.BOLD
-                + "\n\n\n\nALL RESULTS HAVE BEEN COPIED TO THE CLIPBOARD."
-                + Colors.ENDC
-            )
-        else:
-            print(
-                Colors.WARNING
-                + Colors.BOLD
-                + "\n\n\n\nClipboard copy unavailable"
-                + (f" ({clipboard_issue})." if clipboard_issue else ".")
-                + Colors.ENDC
-            )
 
     def export_to_excel(
         self,

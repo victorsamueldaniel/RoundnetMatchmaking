@@ -85,13 +85,25 @@ Run pytest-native tests (optional while migration is in progress):
 pytest -q
 ```
 
-## Build Windows Executable
+## Build Executable (Windows / macOS / Linux)
 Install UI/build extras and run the build script:
 ```bash
 python -m pip install -e ".[ui]"
 python ui/main/build_exe.py
 ```
-The build output is created under `ui/dist/RoundnetMatchmaking/`.
+The build output is created under `ui/main/dist/`.
+Pre-built binaries for all platforms are available as zip attachments on the
+[GitHub Releases](../../releases) page.
+
+## macOS — First Launch (Gatekeeper)
+The distributed `.app` bundle is not code-signed with an Apple Developer certificate.
+On first launch macOS will block it with *"App can't be opened because it's from an
+unidentified developer"*. To open it:
+1. Right-click (or Control-click) the `.app` file.
+2. Select **Open** from the context menu.
+3. Click **Open** in the confirmation dialog.
+
+Subsequent launches work normally.
 
 ## Release Model
 - Build artifacts are not committed to source control.
