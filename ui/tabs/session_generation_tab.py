@@ -1710,13 +1710,32 @@ class SessionGenerationTabMixin:
 
         # Categorize levels into ranges
         levels = selected_df["Level"]
-        range_1_2 = len(levels[(levels >= 1) & (levels < 2)])
-        range_2_3 = len(levels[(levels >= 2) & (levels < 3)])
-        range_3_4 = len(levels[(levels >= 3) & (levels <= 4)])
+        try:
+            if levels.empty:
+                self.info_text.insert(tk.END, "No level data available\n")
+            else:
+                q33 = float(levels.quantile(0.33))
+                q66 = float(levels.quantile(0.66))
 
-        self.info_text.insert(tk.END, f"  Level 1-2: {range_1_2} player(s)\n")
-        self.info_text.insert(tk.END, f"  Level 2-3: {range_2_3} player(s)\n")
-        self.info_text.insert(tk.END, f"  Level 3-4: {range_3_4} player(s)\n")
+                lower_count = int((levels < q33).sum())
+                mid_count = int(((levels >= q33) & (levels < q66)).sum())
+                upper_count = int((levels >= q66).sum())
+
+                self.info_text.insert(
+                    tk.END,
+                    f"  lower third (<= {q33:.2f}): {lower_count} player(s)\n",
+                )
+                self.info_text.insert(
+                    tk.END,
+                    f"  middle third ({q33:.2f} - <{q66:.2f}): {mid_count} player(s)\n",
+                )
+                self.info_text.insert(
+                    tk.END,
+                    f"  upper third (>= {q66:.2f}): {upper_count} player(s)\n",
+                )
+        except Exception:
+            # Fallback to raw counts if quantile computation fails
+            self.info_text.insert(tk.END, "Could not compute quantiles for levels\n")
 
         self.info_text.insert(tk.END, f"Avg Level: {selected_df['Level'].mean():.2f}\n")
         self.info_text.insert(tk.END, "=" * 40 + "\n\n")
