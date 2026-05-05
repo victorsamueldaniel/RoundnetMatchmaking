@@ -1147,7 +1147,7 @@ def create_session_games_png(
                 (str(g_idx + 1), row_bg, "#333333", False),
                 (
                     (
-                        f"{_playershort(pA1.name)}\n({pA1.level:.1f})"
+                        f"{_playershort(pA1.name)}\n{pA1.level:.1f}"
                         if show_levels
                         else _playershort(pA1.name)
                     ),
@@ -1157,7 +1157,7 @@ def create_session_games_png(
                 ),
                 (
                     (
-                        f"{_playershort(pA2.name)}\n({pA2.level:.1f})"
+                        f"{_playershort(pA2.name)}\n{pA2.level:.1f}"
                         if show_levels
                         else _playershort(pA2.name)
                     ),
@@ -1168,7 +1168,7 @@ def create_session_games_png(
                 ("VS", C_VS, "#333333", True),
                 (
                     (
-                        f"{_playershort(pB1.name)}\n({pB1.level:.1f})"
+                        f"{_playershort(pB1.name)}\n{pB1.level:.1f}"
                         if show_levels
                         else _playershort(pB1.name)
                     ),
@@ -1178,7 +1178,7 @@ def create_session_games_png(
                 ),
                 (
                     (
-                        f"{_playershort(pB2.name)}\n({pB2.level:.1f})"
+                        f"{_playershort(pB2.name)}\n{pB2.level:.1f}"
                         if show_levels
                         else _playershort(pB2.name)
                     ),
@@ -1448,7 +1448,7 @@ def create_session_games_round_images(
                 (str(g_idx + 1), row_bg, "#333333", False),
                 (
                     (
-                        f"{_playershort(pA1.name)}\n({pA1.level:.1f})"
+                        f"{_playershort(pA1.name)}\n{pA1.level:.1f}"
                         if show_levels
                         else _playershort(pA1.name)
                     ),
@@ -1458,7 +1458,7 @@ def create_session_games_round_images(
                 ),
                 (
                     (
-                        f"{_playershort(pA2.name)}\n({pA2.level:.1f})"
+                        f"{_playershort(pA2.name)}\n{pA2.level:.1f}"
                         if show_levels
                         else _playershort(pA2.name)
                     ),
@@ -1469,7 +1469,7 @@ def create_session_games_round_images(
                 ("VS", C_VS, "#333333", True),
                 (
                     (
-                        f"{_playershort(pB1.name)}\n({pB1.level:.1f})"
+                        f"{_playershort(pB1.name)}\n{pB1.level:.1f}"
                         if show_levels
                         else _playershort(pB1.name)
                     ),
@@ -1479,7 +1479,7 @@ def create_session_games_round_images(
                 ),
                 (
                     (
-                        f"{_playershort(pB2.name)}\n({pB2.level:.1f})"
+                        f"{_playershort(pB2.name)}\n{pB2.level:.1f}"
                         if show_levels
                         else _playershort(pB2.name)
                     ),
