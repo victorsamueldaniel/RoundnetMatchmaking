@@ -2,6 +2,7 @@
 
 import sys
 import os
+import unicodedata
 
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
@@ -303,7 +304,7 @@ class SessionGenerationTabMixin:
         self.player_button_states = {}  # Track selected state
 
         # Create player buttons in 6 columns, sorted alphabetically horizontally
-        sorted_players = sorted(self.main_df.index)
+        sorted_players = sorted(self.main_df.index, key=lambda s: unicodedata.normalize('NFD', s.lower()).encode('ascii', 'ignore').decode('ascii'))
         num_columns = 6
 
         for idx, player_name in enumerate(sorted_players):
@@ -1901,7 +1902,7 @@ class SessionGenerationTabMixin:
         grid_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=6, pady=6)
         grid_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
-        sorted_players = sorted(self.main_df.index)
+        sorted_players = sorted(self.main_df.index, key=lambda s: unicodedata.normalize('NFD', s.lower()).encode('ascii', 'ignore').decode('ascii'))
         num_cols = 6
         btn_refs = {}
 
@@ -2175,7 +2176,7 @@ class SessionGenerationTabMixin:
         tk.Spinbox(
             form_frame,
             from_=0,
-            to=4,
+            to=10000,
             increment=0.1,
             textvariable=level_var,
             font=self.fonts["normal"],
@@ -2440,7 +2441,7 @@ class SessionGenerationTabMixin:
         # Recreate all player buttons
         self.player_buttons = {}
         self.player_button_states = {}
-        sorted_players = sorted(self.main_df.index)
+        sorted_players = sorted(self.main_df.index, key=lambda s: unicodedata.normalize('NFD', s.lower()).encode('ascii', 'ignore').decode('ascii'))
         num_columns = 6
 
         for idx, player_name in enumerate(sorted_players):
