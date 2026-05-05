@@ -430,10 +430,10 @@ def copy_runtime_files(project_root: Path, dist_app_dir: Path) -> None:
 
 
 def build_exe(version: str | None = None) -> bool:
-    # build_root = ui/ folder — build/, dist/, OLD_dist/ are created here
+    # build_root = ui/main/ folder — build/, dist/, OLD_dist/ are created here
     build_root = Path(__file__).resolve().parent
     # project_root = workspace root — source files are relative to here
-    project_root = build_root.parent
+    project_root = build_root.parent.parent
 
     app_name = f"{APP_NAME}_{version.replace('.', '_')}" if version else APP_NAME
     dist_app_dir = build_root / "dist" / app_name
