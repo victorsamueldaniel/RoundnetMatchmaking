@@ -63,3 +63,8 @@ ui = ["*.png", "*.ico"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+# tests_fine_tuning.py is a script-style file with no test functions and
+# requires real .xlsx data — excluded from pytest collection
+collect_ignore = [
+    "tests/tests_fine_tuning.py",
+]
