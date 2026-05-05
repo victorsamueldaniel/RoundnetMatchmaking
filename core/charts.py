@@ -1131,11 +1131,12 @@ def create_session_games_png(
             type_str = (game.type_preference or "").strip()
             gender_str = (game.gender_preference or "").strip()
             _ABBREV_GAME = {
-                "balanced": "bal.",
+                "balanced": "bal",
                 "level": "lvl",
                 "mixed": "mix",
                 "female": "F",
                 "male": "M",
+                "open": "opn",
             }
             info = _ABBREV_GAME.get(type_str.lower(), type_str)
             gender_abbr = _ABBREV_GAME.get(gender_str.lower(), gender_str)
@@ -1332,7 +1333,7 @@ def create_session_games_round_images(
     images = []
     _ABBREV = {"balanced": "bal", "level": "lvl", "mixed": "mix", "open": "opn"}
     _ABBREV_GAME = {
-        "balanced": "bal.",
+        "balanced": "bal",
         "level": "lvl",
         "mixed": "mix",
         "female": "F",
