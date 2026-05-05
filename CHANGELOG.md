@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+
 ## [1.3.0] -
 ### Added
 - Mac OS Intel and ARM executable, Unix executable

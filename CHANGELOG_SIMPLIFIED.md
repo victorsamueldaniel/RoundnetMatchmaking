@@ -1,4 +1,11 @@
 
+# version 1.3.0 — May 5, 2026
+## What's new?
+- Mac OS Intel and ARM executable, Unix executable
+## BUG FIXES
+- Changed alphabetical ordering, so accented letters come before the next one (Like "Aliénor" would come before "Alissa") in players frame
+- Spinbox of player level in player edit dialog used to be caped at 4, it is now caped at 10'000
+- removed display bug on session png when level is selected
 # Version 1.2.0 — April 25, 2026
 ## What's new ?
 ### Reorder rounds after generating a session
