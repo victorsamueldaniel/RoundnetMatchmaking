@@ -72,6 +72,7 @@ class SessionGenerationTabMixin:
         self.selected_players = []
         self.player_overrides = {}
         self.preferred_pairs = []  # list of (frozenset({name1, name2}), forced_games)
+        self.png_show_levels_var = tk.BooleanVar(value=False)
         self._tooltip_window = None
         self._tooltip_after_id = None
         self._tooltip_delay_ms = 500
@@ -304,7 +305,12 @@ class SessionGenerationTabMixin:
         self.player_button_states = {}  # Track selected state
 
         # Create player buttons in 6 columns, sorted alphabetically horizontally
-        sorted_players = sorted(self.main_df.index, key=lambda s: unicodedata.normalize('NFD', s.lower()).encode('ascii', 'ignore').decode('ascii'))
+        sorted_players = sorted(
+            self.main_df.index,
+            key=lambda s: unicodedata.normalize("NFD", s.lower())
+            .encode("ascii", "ignore")
+            .decode("ascii"),
+        )
         num_columns = 6
 
         for idx, player_name in enumerate(sorted_players):
@@ -773,49 +779,6 @@ class SessionGenerationTabMixin:
         self.spectrum_buttons = {"on": spectrum_on_btn, "off": spectrum_off_btn}
         self.update_spectrum_switch_display()
 
-        # PNG levels toggle
-        levels_row = tk.Frame(spectrum_control_frame, bg="#dddddd")
-        levels_row.pack(fill=tk.X, padx=5, pady=(0, 4))
-        levels_label = tk.Label(
-            levels_row,
-            text="Show levels in session PNG",
-            font=self.fonts["small_bold"],
-            bg="#dddddd",
-            fg=self.colors["text_dark"],
-        )
-        levels_label.pack(side=tk.LEFT)
-        self.bind_tooltip(
-            levels_label,
-            "Show each player's level next to their name in the Session Games PNG.",
-        )
-        self.png_show_levels_var = tk.BooleanVar(value=False)
-        levels_btn_frame = tk.Frame(levels_row, bg="#dddddd")
-        levels_btn_frame.pack(side=tk.RIGHT)
-        levels_on_btn = tk.Button(
-            levels_btn_frame,
-            text="ON",
-            font=self.fonts["small"],
-            width=6,
-            cursor="hand2",
-            padx=5,
-            pady=0,
-            command=lambda: self._set_png_levels_state(True),
-        )
-        levels_on_btn.pack(side=tk.LEFT, padx=2)
-        levels_off_btn = tk.Button(
-            levels_btn_frame,
-            text="OFF",
-            font=self.fonts["small"],
-            width=6,
-            cursor="hand2",
-            padx=5,
-            pady=0,
-            command=lambda: self._set_png_levels_state(False),
-        )
-        levels_off_btn.pack(side=tk.LEFT, padx=2)
-        self._png_levels_buttons = {"on": levels_on_btn, "off": levels_off_btn}
-        self._set_png_levels_state(False)  # initialise display
-
         # Configure grid weights
         root.columnconfigure(0, weight=1)
         root.rowconfigure(0, weight=1)
@@ -947,6 +910,13 @@ class SessionGenerationTabMixin:
         self.root.after(150, lambda: self.refresh_layout_for_current_screen(force=True))
         # Second pass after the window manager has fully settled the maximized layout
         self.root.after(800, self._schedule_player_button_font_fit)
+
+        # Contact tab is available on startup and should stay as the last tab.
+        if hasattr(self, "show_contact_tab"):
+            try:
+                self.show_contact_tab()
+            except Exception as e:
+                print(f"Warning: could not create Contact tab: {e}")
 
     def _make_label_frame(self, parent, title, bd=3):
         """Return a styled LabelFrame with the app's standard look."""
@@ -1555,26 +1525,6 @@ class SessionGenerationTabMixin:
         self.spectrum_var.set(bool(enabled))
         self.update_spectrum_switch_display()
 
-    def _set_png_levels_state(self, enabled):
-        """Set the 'show levels in PNG' toggle state and refresh button display."""
-        self.png_show_levels_var.set(bool(enabled))
-        if not hasattr(self, "_png_levels_buttons"):
-            return
-        selected = "on" if enabled else "off"
-        for key, btn in self._png_levels_buttons.items():
-            if key == selected:
-                btn.config(
-                    bg=self.colors["accent_yellow"],
-                    fg=self.colors["text_dark"],
-                    relief=tk.SUNKEN,
-                )
-            else:
-                btn.config(
-                    bg=self.colors["bg_light"],
-                    fg=self.colors["text_dark"],
-                    relief=tk.RAISED,
-                )
-
     def update_spectrum_switch_display(self):
         """Refresh Spectrum ON/OFF button appearances from current state"""
         if not hasattr(self, "spectrum_buttons"):
@@ -1717,9 +1667,9 @@ class SessionGenerationTabMixin:
                 q33 = float(levels.quantile(0.33))
                 q66 = float(levels.quantile(0.66))
 
-                lower_count = int((levels < q33).sum())
-                mid_count = int(((levels >= q33) & (levels < q66)).sum())
-                upper_count = int((levels >= q66).sum())
+                lower_count = int((levels <= q33).sum())
+                mid_count = int(((levels > q33) & (levels <= q66)).sum())
+                upper_count = int((levels > q66).sum())
 
                 self.info_text.insert(
                     tk.END,
@@ -1727,11 +1677,11 @@ class SessionGenerationTabMixin:
                 )
                 self.info_text.insert(
                     tk.END,
-                    f"  middle third ({q33:.2f} - <{q66:.2f}): {mid_count} player(s)\n",
+                    f"  middle third (>{q33:.2f} and <={q66:.2f}): {mid_count} player(s)\n",
                 )
                 self.info_text.insert(
                     tk.END,
-                    f"  upper third (>= {q66:.2f}): {upper_count} player(s)\n",
+                    f"  upper third (> {q66:.2f}): {upper_count} player(s)\n",
                 )
         except Exception:
             # Fallback to raw counts if quantile computation fails
@@ -1921,7 +1871,12 @@ class SessionGenerationTabMixin:
         grid_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=6, pady=6)
         grid_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
-        sorted_players = sorted(self.main_df.index, key=lambda s: unicodedata.normalize('NFD', s.lower()).encode('ascii', 'ignore').decode('ascii'))
+        sorted_players = sorted(
+            self.main_df.index,
+            key=lambda s: unicodedata.normalize("NFD", s.lower())
+            .encode("ascii", "ignore")
+            .decode("ascii"),
+        )
         num_cols = 6
         btn_refs = {}
 
@@ -2460,7 +2415,12 @@ class SessionGenerationTabMixin:
         # Recreate all player buttons
         self.player_buttons = {}
         self.player_button_states = {}
-        sorted_players = sorted(self.main_df.index, key=lambda s: unicodedata.normalize('NFD', s.lower()).encode('ascii', 'ignore').decode('ascii'))
+        sorted_players = sorted(
+            self.main_df.index,
+            key=lambda s: unicodedata.normalize("NFD", s.lower())
+            .encode("ascii", "ignore")
+            .decode("ascii"),
+        )
         num_columns = 6
 
         for idx, player_name in enumerate(sorted_players):

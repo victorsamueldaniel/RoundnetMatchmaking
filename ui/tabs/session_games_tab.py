@@ -161,6 +161,9 @@ class SessionGamesTabMixin:
         # ------------------------------------------------------------------
         n_rounds = len(round_images)
 
+        if not hasattr(self, "png_show_levels_var"):
+            self.png_show_levels_var = tk.BooleanVar(value=False)
+
         # Initialise or reset swap state on self so Apply Changes can access it
         self._sg_round_images_base = list(round_images)  # original PIL images
         self._sg_round_order = list(range(n_rounds))  # display_pos -> orig_idx
@@ -177,12 +180,13 @@ class SessionGamesTabMixin:
         right_panel = tk.Frame(
             outer,
             bg="#EEEEEE",
-            width=150,
+            width=205,
             relief=tk.RIDGE,
             bd=1,
         )
         right_panel.pack(side=tk.RIGHT, fill=tk.Y, padx=(4, 8), pady=8)
         right_panel.pack_propagate(False)
+        right_panel.grid_columnconfigure(0, weight=1)
 
         tk.Label(
             right_panel,
@@ -190,7 +194,7 @@ class SessionGamesTabMixin:
             font=self.fonts["small_bold"],
             bg="#EEEEEE",
             fg=self.colors["accent_red"],
-        ).pack(pady=(14, 4))
+        ).grid(row=0, column=0, padx=8, pady=(14, 4), sticky="ew")
 
         tk.Label(
             right_panel,
@@ -199,19 +203,19 @@ class SessionGamesTabMixin:
             bg="#EEEEEE",
             fg="#555555",
             justify=tk.LEFT,
-            wraplength=130,
-        ).pack(padx=8, pady=(0, 12))
+            wraplength=180,
+        ).grid(row=1, column=0, padx=8, pady=(0, 12), sticky="ew")
 
         status_lbl = tk.Label(
             right_panel,
-            text="No pending swaps",
+            text="No pending modifications",
             font=("Arial", 9),
             bg="#EEEEEE",
             fg="#555555",
             justify=tk.CENTER,
-            wraplength=130,
+            wraplength=180,
         )
-        status_lbl.pack(padx=8, pady=(0, 10))
+        status_lbl.grid(row=2, column=0, padx=8, pady=(0, 10), sticky="ew")
 
         apply_btn = tk.Button(
             right_panel,
@@ -225,7 +229,45 @@ class SessionGamesTabMixin:
             pady=8,
             state=tk.DISABLED,
         )
-        apply_btn.pack(padx=8, pady=(0, 8))
+        apply_btn.grid(row=4, column=0, padx=8, pady=(0, 8), sticky="ew")
+
+        levels_row = tk.Frame(right_panel, bg="#EEEEEE")
+        levels_row.grid(row=3, column=0, padx=8, pady=(0, 8), sticky="ew")
+
+        tk.Label(
+            levels_row,
+            text="Show Levels",
+            font=self.fonts["small_bold"],
+            bg="#EEEEEE",
+            fg=self.colors["text_dark"],
+        ).pack(side=tk.LEFT)
+
+        levels_btn_frame = tk.Frame(levels_row, bg="#EEEEEE")
+        levels_btn_frame.pack(side=tk.RIGHT)
+
+        levels_on_btn = tk.Button(
+            levels_btn_frame,
+            text="ON",
+            font=self.fonts["small"],
+            width=4,
+            cursor="hand2",
+            padx=2,
+            pady=0,
+        )
+        levels_on_btn.pack(side=tk.LEFT, padx=(0, 2))
+
+        levels_off_btn = tk.Button(
+            levels_btn_frame,
+            text="OFF",
+            font=self.fonts["small"],
+            width=4,
+            cursor="hand2",
+            padx=2,
+            pady=0,
+        )
+        levels_off_btn.pack(side=tk.LEFT)
+
+        self._sg_levels_buttons = {"on": levels_on_btn, "off": levels_off_btn}
 
         reset_btn = tk.Button(
             right_panel,
@@ -239,7 +281,7 @@ class SessionGamesTabMixin:
             pady=4,
             state=tk.DISABLED,
         )
-        reset_btn.pack(padx=8)
+        reset_btn.grid(row=5, column=0, padx=8, pady=(0, 8), sticky="ew")
 
         # Canvas area (left side)
         canvas_frame = tk.Frame(outer, bg=self.colors["bg_light"])
@@ -303,6 +345,81 @@ class SessionGamesTabMixin:
                 y_cursor += nh + GAP
 
             canvas.configure(scrollregion=(0, 0, max(cw, total_width), y_cursor))
+
+        self._sg_render = _render
+        self._sg_levels_initial_state = bool(self.png_show_levels_var.get())
+        self._sg_levels_changed = False
+
+        def _refresh_action_buttons():
+            has_pending_modifications = (
+                self._sg_has_pending_swaps or self._sg_levels_changed
+            )
+            apply_btn.config(
+                state=tk.NORMAL if has_pending_modifications else tk.DISABLED
+            )
+            reset_btn.config(
+                state=tk.NORMAL if self._sg_has_pending_swaps else tk.DISABLED
+            )
+
+        def _refresh_status_label():
+            if self._sg_has_pending_swaps:
+                n_swapped = session_games_out_of_place_count(self._sg_round_order)
+                status_lbl.config(
+                    text=f"{n_swapped} round(s)\nout of place",
+                    fg=self.colors["accent_red"],
+                )
+                return
+            if self._sg_levels_changed:
+                status_lbl.config(text="")
+                return
+            status_lbl.config(text="No pending modifications", fg="#555555")
+
+        def _update_levels_button_display():
+            selected = "on" if bool(self.png_show_levels_var.get()) else "off"
+            for key, btn in self._sg_levels_buttons.items():
+                if key == selected:
+                    btn.config(
+                        bg=self.colors["accent_yellow"],
+                        fg=self.colors["text_dark"],
+                        relief=tk.SUNKEN,
+                    )
+                else:
+                    btn.config(
+                        bg=self.colors["bg_light"],
+                        fg=self.colors["text_dark"],
+                        relief=tk.RAISED,
+                    )
+
+        def _set_session_levels_state(enabled):
+            enabled = bool(enabled)
+            if enabled == bool(self.png_show_levels_var.get()):
+                _update_levels_button_display()
+                return
+
+            self.png_show_levels_var.set(enabled)
+            self._sg_levels_changed = (
+                bool(self.png_show_levels_var.get()) != self._sg_levels_initial_state
+            )
+            try:
+                from core.charts import (
+                    create_session_games_round_images,
+                )  # noqa: PLC0415
+
+                self._sg_round_images_base = create_session_games_round_images(
+                    self.session_of_rounds,
+                    show_levels=enabled,
+                )
+                self._sg_render()
+            except Exception as e:
+                print(f"Warning: could not update Session Games level display: {e}")
+            _update_levels_button_display()
+            _refresh_action_buttons()
+            _refresh_status_label()
+
+        levels_on_btn.config(command=lambda: _set_session_levels_state(True))
+        levels_off_btn.config(command=lambda: _set_session_levels_state(False))
+        _update_levels_button_display()
+        _refresh_status_label()
 
         def _fit_to_height():
             try:
@@ -379,18 +496,8 @@ class SessionGamesTabMixin:
                 )
                 _render()
                 # Update button states and status label
-                if self._sg_has_pending_swaps:
-                    n_swapped = session_games_out_of_place_count(self._sg_round_order)
-                    apply_btn.config(state=tk.NORMAL)
-                    reset_btn.config(state=tk.NORMAL)
-                    status_lbl.config(
-                        text=f"{n_swapped} round(s)\nout of place",
-                        fg=self.colors["accent_red"],
-                    )
-                else:
-                    apply_btn.config(state=tk.DISABLED)
-                    reset_btn.config(state=tk.DISABLED)
-                    status_lbl.config(text="No pending swaps", fg="#555555")
+                _refresh_action_buttons()
+                _refresh_status_label()
 
         canvas.bind("<Button-1>", _on_click)
 
@@ -399,16 +506,15 @@ class SessionGamesTabMixin:
             self._sg_round_order = list(range(n_rounds))
             self._sg_selected_round = None
             self._sg_has_pending_swaps = False
-            apply_btn.config(state=tk.DISABLED)
-            reset_btn.config(state=tk.DISABLED)
-            status_lbl.config(text="No pending swaps", fg="#555555")
+            _refresh_action_buttons()
+            _refresh_status_label()
             _render()
 
         reset_btn.config(command=_reset_order)
 
         # ---- apply changes button ----------------------------------------
         def _apply_round_swaps():
-            if not self._sg_has_pending_swaps:
+            if not (self._sg_has_pending_swaps or self._sg_levels_changed):
                 return
 
             apply_btn.config(state=tk.DISABLED)
@@ -434,6 +540,10 @@ class SessionGamesTabMixin:
             print("APPLYING ROUND ORDER SWAP")
             orig_labels = " → ".join(f"R{orig + 1}" for orig in self._sg_round_order)
             print(f"New display order: {orig_labels}")
+            print(
+                "Include levels in saved Session Games PNG: "
+                f"{'ON' if self.png_show_levels_var.get() else 'OFF'}"
+            )
             print("=" * 80)
 
             # Reorder the rounds list on the live session object
@@ -444,6 +554,7 @@ class SessionGamesTabMixin:
 
             # Reset swap state (will be re-initialised by show_session_games_tab)
             self._sg_has_pending_swaps = False
+            self._sg_levels_changed = False
             status_lbl.config(text="Applied!", fg="#1A6B2A")
 
             # Regenerate the session-games PNG and per-round images

@@ -11,11 +11,193 @@ main_module = None
 
 
 class GamesEditorTabMixin:
+    def _ensure_games_editor_button_config(self):
+        """Ensure token-based text/style maps exist for button presentation."""
+        middle_text_map = getattr(self, "_games_editor_middle_text_map", None)
+        if not isinstance(middle_text_map, dict):
+            middle_text_map = {}
+        middle_text_map.setdefault("default", "")
+        middle_text_map.setdefault("over_benched_not_playing", "SAD!")
+        self._games_editor_middle_text_map = middle_text_map
+
+        style_map = getattr(self, "_games_editor_button_style_map", None)
+        if not isinstance(style_map, dict):
+            style_map = {}
+        style_map.setdefault(
+            "default",
+            {
+                "bg": self.colors["bg_light"],
+                "fg": self.colors["text_dark"],
+            },
+        )
+        style_map.setdefault(
+            "over_benched_not_playing",
+            {
+                "bg": "#000000",
+                "fg": "#FFFFFF",
+            },
+        )
+        self._games_editor_button_style_map = style_map
+
+    def _resolve_middle_text(self, middle_token="default", middle_override=None):
+        """Return middle-line text from token map, with optional direct override."""
+        if middle_override is not None:
+            return middle_override
+        self._ensure_games_editor_button_config()
+        return self._games_editor_middle_text_map.get(
+            middle_token,
+            self._games_editor_middle_text_map.get("default", ""),
+        )
+
+    def _format_player_button_text(
+        self,
+        player,
+        middle_token="default",
+        middle_override=None,
+    ):
+        """Build the player button label with a tokenized, configurable middle line."""
+        middle_text = self._resolve_middle_text(
+            middle_token=middle_token,
+            middle_override=middle_override,
+        )
+        if middle_text:
+            return f"{player.name}\n{middle_text}\nLvl {player.level}"
+        return f"{player.name}\n\nLvl {player.level}"
+
+    def _resolve_button_colors(
+        self,
+        style_token="default",
+        bg_override=None,
+        fg_override=None,
+    ):
+        """Resolve button colours from style token map and optional overrides."""
+        self._ensure_games_editor_button_config()
+        token_style = self._games_editor_button_style_map.get(
+            style_token,
+            self._games_editor_button_style_map["default"],
+        )
+        bg = bg_override if bg_override is not None else token_style.get("bg")
+        fg = fg_override if fg_override is not None else token_style.get("fg")
+        return bg, fg
+
+    def _compute_games_played_counts_from_editor_session(self):
+        """Compute games-played counts from the current editable in-memory session."""
+        if not hasattr(self, "session_of_rounds") or self.session_of_rounds is None:
+            return {}
+
+        counts = {p.name: 0 for p in self.session_of_rounds.players}
+        for round_obj in self.session_of_rounds.rounds:
+            for game in round_obj.games:
+                # Use live team slots instead of cached game.participants so
+                # pending swaps in the editor are reflected immediately.
+                for participant in game.team_A.players + game.team_B.players:
+                    counts[participant.name] = counts.get(participant.name, 0) + 1
+        return counts
+
+    def _over_benched_not_playing_names(self):
+        """Return player names whose games-played count is 2+ below current max."""
+        counts = self._compute_games_played_counts_from_editor_session()
+        if not counts:
+            return set()
+
+        max_played = max(counts.values())
+        return {name for name, played in counts.items() if (max_played - played) >= 2}
+
+    def _middle_style_token_for_player(
+        self,
+        player,
+        team_id,
+        over_benched_names=None,
+    ):
+        """Return presentation token for this player button context."""
+        if team_id == "not_playing":
+            if over_benched_names is None:
+                over_benched_names = self._over_benched_not_playing_names()
+            if player.name in over_benched_names:
+                return "over_benched_not_playing"
+        return "default"
+
+    def _player_from_button_key(self, key):
+        """Resolve current player object backing a stored games-editor button key."""
+        round_idx, game_idx, team_id, row, col = key
+        game_round = self.session_of_rounds.rounds[round_idx]
+
+        if team_id == "not_playing":
+            return game_round.not_playing[row * 4 + col]
+
+        game = game_round.games[game_idx]
+        if team_id == "A":
+            return game.team_A.players[col]
+        if team_id == "B":
+            return game.team_B.players[col]
+        return None
+
+    def _apply_player_button_presentation(
+        self,
+        btn,
+        player,
+        team_id,
+        *,
+        middle_token="default",
+        middle_override=None,
+        bg_override=None,
+        fg_override=None,
+        relief=tk.RAISED,
+    ):
+        """Apply centralized text + style presentation to a games editor button."""
+        text = self._format_player_button_text(
+            player,
+            middle_token=middle_token,
+            middle_override=middle_override,
+        )
+        bg, fg = self._resolve_button_colors(
+            style_token=middle_token,
+            bg_override=bg_override,
+            fg_override=fg_override,
+        )
+        btn.config(text=text, bg=bg, fg=fg, relief=relief)
+
+    def _refresh_not_playing_button_styles(self):
+        """Apply tokenized not-playing styles globally across all rounds."""
+        if not hasattr(self, "game_player_buttons"):
+            return
+
+        over_benched_names = self._over_benched_not_playing_names()
+        for key, btn in list(self.game_player_buttons.items()):
+            _, _, team_id, _, _ = key
+            if team_id != "not_playing":
+                continue
+
+            try:
+                player = self._player_from_button_key(key)
+            except Exception:
+                continue
+
+            if player is None:
+                continue
+
+            token = self._middle_style_token_for_player(
+                player,
+                team_id,
+                over_benched_names=over_benched_names,
+            )
+            try:
+                self._apply_player_button_presentation(
+                    btn,
+                    player,
+                    team_id,
+                    middle_token=token,
+                )
+            except Exception:
+                pass
+
     def show_games_editor(self):
         """Create interactive games editor tab where users can swap players"""
         if not hasattr(self, "session_of_rounds") or self.session_of_rounds is None:
             print("No session available to edit.")
             return
+
+        self._ensure_games_editor_button_config()
 
         # Compact sizing for this tab so 4 rounds can fit horizontally.
         self.games_editor_button_font = self._scaled_font_tuple(
@@ -477,10 +659,10 @@ class GamesEditorTabMixin:
 
         btn = tk.Button(
             parent,
-            text=f"{player.name}\n\nLvl {player.level}",
+            text=self._format_player_button_text(player),
             font=getattr(self, "games_editor_player_button_font", self.fonts["small"]),
-            bg=self.colors["bg_light"],
-            fg=self.colors["text_dark"],
+            bg=self._resolve_button_colors(style_token="default")[0],
+            fg=self._resolve_button_colors(style_token="default")[1],
             relief=tk.RAISED,
             padx=6,
             pady=3,
@@ -507,12 +689,19 @@ class GamesEditorTabMixin:
             "team_id": team_id,
         }
 
+        over_benched_names = self._over_benched_not_playing_names()
+        token = self._middle_style_token_for_player(
+            player,
+            team_id,
+            over_benched_names=over_benched_names,
+        )
+        bg, fg = self._resolve_button_colors(style_token=token)
         btn = tk.Button(
             parent,
-            text=f"{player.name}\n\nLvl {player.level}",
+            text=self._format_player_button_text(player, middle_token=token),
             font=getattr(self, "games_editor_player_button_font", self.fonts["small"]),
-            bg=self.colors["bg_light"],
-            fg=self.colors["text_dark"],
+            bg=bg,
+            fg=fg,
             relief=tk.RAISED,
             padx=6,
             pady=3,
@@ -545,6 +734,8 @@ class GamesEditorTabMixin:
         except Exception:
             return
 
+        over_benched_names = self._over_benched_not_playing_names()
+
         # Update games
         for game_idx, game in enumerate(game_round.games):
             # Team A
@@ -552,10 +743,10 @@ class GamesEditorTabMixin:
                 key = (round_idx, game_idx, "A", 0, col_idx)
                 btn = self.game_player_buttons.get(key)
                 if btn:
-                    btn.config(
-                        text=f"{player.name}\n\nLvl {player.level}",
-                        bg=self.colors["bg_light"],
-                        relief=tk.RAISED,
+                    self._apply_player_button_presentation(
+                        btn,
+                        player,
+                        "A",
                     )
 
             # Team B
@@ -563,10 +754,10 @@ class GamesEditorTabMixin:
                 key = (round_idx, game_idx, "B", 0, col_idx)
                 btn = self.game_player_buttons.get(key)
                 if btn:
-                    btn.config(
-                        text=f"{player.name}\n\nLvl {player.level}",
-                        bg=self.colors["bg_light"],
-                        relief=tk.RAISED,
+                    self._apply_player_button_presentation(
+                        btn,
+                        player,
+                        "B",
                     )
 
             # Refresh team frame colours
@@ -580,10 +771,16 @@ class GamesEditorTabMixin:
                 key = (round_idx, None, "not_playing", row, col)
                 btn = self.game_player_buttons.get(key)
                 if btn:
-                    btn.config(
-                        text=f"{player.name}\n\nLvl {player.level}",
-                        bg=self.colors["bg_light"],
-                        relief=tk.RAISED,
+                    token = self._middle_style_token_for_player(
+                        player,
+                        "not_playing",
+                        over_benched_names=over_benched_names,
+                    )
+                    self._apply_player_button_presentation(
+                        btn,
+                        player,
+                        "not_playing",
+                        middle_token=token,
                     )
 
     def refresh_all_rounds(self):
@@ -596,28 +793,25 @@ class GamesEditorTabMixin:
         if not hasattr(self, "session_of_rounds") or self.session_of_rounds is None:
             return
 
+        over_benched_names = self._over_benched_not_playing_names()
+
         for key, btn in list(self.game_player_buttons.items()):
             try:
                 round_idx, game_idx, team_id, row, col = key
-                game_round = self.session_of_rounds.rounds[round_idx]
+                player = self._player_from_button_key(key)
+                if player is None:
+                    continue
 
-                if team_id == "not_playing":
-                    index = row * 4 + col
-                    player = game_round.not_playing[index]
-                else:
-                    # game_idx should be int
-                    game = game_round.games[game_idx]
-                    if team_id == "A":
-                        player = game.team_A.players[col]
-                    elif team_id == "B":
-                        player = game.team_B.players[col]
-                    else:
-                        continue
-
-                btn.config(
-                    text=f"{player.name}\n\nLvl {player.level} ",
-                    bg=self.colors["bg_light"],
-                    relief=tk.RAISED,
+                token = self._middle_style_token_for_player(
+                    player,
+                    team_id,
+                    over_benched_names=over_benched_names,
+                )
+                self._apply_player_button_presentation(
+                    btn,
+                    player,
+                    team_id,
+                    middle_token=token,
                 )
                 # use the correct player object
                 try:
@@ -804,6 +998,8 @@ class GamesEditorTabMixin:
 
         game_round = self.session_of_rounds.rounds[round_idx]
 
+        over_benched_names = self._over_benched_not_playing_names()
+
         for key, btn in list(self.game_player_buttons.items()):
             btn_round, game_idx, team_id, row, col = key
             if btn_round != round_idx:
@@ -824,18 +1020,34 @@ class GamesEditorTabMixin:
             except Exception:
                 continue
 
-            delta = deltas.get(player.name, 0.0)
-            bg, suffix = self._delta_to_bg(delta)
-            base_text = f"{player.name}\n\nLvl {player.level}"
-            new_text = (
-                f"{player.name}\n{suffix}\nLvl {player.level}"
-                if suffix is not None
-                else f"{base_text}"
-            )
             try:
-                btn.config(bg=bg, text=new_text)
+                if team_id == "not_playing":
+                    token = self._middle_style_token_for_player(
+                        player,
+                        team_id,
+                        over_benched_names=over_benched_names,
+                    )
+                    self._apply_player_button_presentation(
+                        btn,
+                        player,
+                        team_id,
+                        middle_token=token,
+                    )
+                else:
+                    delta = deltas.get(player.name, 0.0)
+                    bg, suffix = self._delta_to_bg(delta)
+                    self._apply_player_button_presentation(
+                        btn,
+                        player,
+                        team_id,
+                        middle_override=suffix,
+                        bg_override=bg,
+                    )
             except Exception:
                 pass
+
+        # Enforce global not-playing styles for matching names across all rounds.
+        self._refresh_not_playing_button_styles()
 
     def toggle_player_selection(self, button, player_info):
         """Toggle player selection for swapping"""
@@ -843,7 +1055,16 @@ class GamesEditorTabMixin:
         for idx, (btn, info) in enumerate(self.selected_for_swap):
             if info["player"].name == player_info["player"].name:
                 # Deselect
-                btn.config(bg=self.colors["bg_light"], relief=tk.RAISED)
+                token = self._middle_style_token_for_player(
+                    info["player"],
+                    info.get("team_id"),
+                )
+                self._apply_player_button_presentation(
+                    btn,
+                    info["player"],
+                    info.get("team_id"),
+                    middle_token=token,
+                )
                 self.selected_for_swap.pop(idx)
                 return
 
@@ -872,8 +1093,24 @@ class GamesEditorTabMixin:
                 "Invalid Swap", "Can only swap players within the same round!"
             )
             # Deselect both
-            btn1.config(bg=self.colors["bg_light"], relief=tk.RAISED)
-            btn2.config(bg=self.colors["bg_light"], relief=tk.RAISED)
+            token1 = self._middle_style_token_for_player(
+                info1["player"], info1.get("team_id")
+            )
+            token2 = self._middle_style_token_for_player(
+                info2["player"], info2.get("team_id")
+            )
+            self._apply_player_button_presentation(
+                btn1,
+                info1["player"],
+                info1.get("team_id"),
+                middle_token=token1,
+            )
+            self._apply_player_button_presentation(
+                btn2,
+                info2["player"],
+                info2.get("team_id"),
+                middle_token=token2,
+            )
             self.selected_for_swap.clear()
             return
 
@@ -907,19 +1144,30 @@ class GamesEditorTabMixin:
 
         # Update button labels
         btn1.config(
-            text=f"{player2.name}\n\nLvl {player2.level}",
-            bg=self.colors["bg_light"],
             relief=tk.RAISED,
         )
         btn2.config(
-            text=f"{player1.name}\n\nLvl {player1.level}",
-            bg=self.colors["bg_light"],
             relief=tk.RAISED,
         )
 
         # Update the player info references
         info1["player"] = player2
         info2["player"] = player1
+
+        token1 = self._middle_style_token_for_player(player2, info1.get("team_id"))
+        token2 = self._middle_style_token_for_player(player1, info2.get("team_id"))
+        self._apply_player_button_presentation(
+            btn1,
+            player2,
+            info1.get("team_id"),
+            middle_token=token1,
+        )
+        self._apply_player_button_presentation(
+            btn2,
+            player1,
+            info2.get("team_id"),
+            middle_token=token2,
+        )
 
         # Clear selection
         self.selected_for_swap.clear()
@@ -1212,9 +1460,12 @@ class GamesEditorTabMixin:
                     _player = _game_round.games[_g_idx].team_A.players[_col]
                 else:
                     _player = _game_round.games[_g_idx].team_B.players[_col]
-                _btn.config(
-                    bg=self.colors["bg_light"],
-                    text=f"{_player.name}\n\nLvl {_player.level}",
+                _token = self._middle_style_token_for_player(_player, _team_id)
+                self._apply_player_button_presentation(
+                    _btn,
+                    _player,
+                    _team_id,
+                    middle_token=_token,
                 )
             except Exception:
                 pass

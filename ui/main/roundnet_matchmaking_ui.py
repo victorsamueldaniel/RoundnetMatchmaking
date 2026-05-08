@@ -19,6 +19,7 @@ from ui.functions.tab_functions import (
 from ui.tabs.session_generation_tab import SessionGenerationTabMixin
 from ui.tabs.games_editor_tab import GamesEditorTabMixin
 from ui.tabs.session_games_tab import SessionGamesTabMixin
+from ui.tabs.contact import ContactTabMixin
 from ui.tabs.plots_tabs.plots_tabs_orchestrator import PlotsTabMixin
 import ui.tabs.session_generation_tab as session_generation_tab
 import ui.tabs.games_editor_tab as games_editor_tab
@@ -32,6 +33,7 @@ class PlayerSelectionUI(
     SessionGenerationTabMixin,
     GamesEditorTabMixin,
     SessionGamesTabMixin,
+    ContactTabMixin,
     PlotsTabMixin,
 ):
     """Composed UI class built from tab mixins."""
@@ -99,3 +101,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# %%

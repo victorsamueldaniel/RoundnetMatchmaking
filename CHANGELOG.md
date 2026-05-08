@@ -1,11 +1,16 @@
 # Changelog
-
 All notable changes to this project are documented in this file.
+## [1.4.0] - 2026-05-08
 ### Added
+- Added a contact page tab.
+- The Games Editor now detects over-benched players live during pending swaps and marks every matching Not Playing button across rounds with a black background, white text, and a middle SAD! label.
+This behavior is implemented through a centralized, token-based button text/style system so the middle-line UI text can be changed later without rewriting swap or refresh logic.
 ### Changed
-- names of tabs scripts
+- Names of tabs scripts
+- Changed placement of show level on PNG button. It is now in session games tab and allow dynamic changes
 ### Removed
 ### Bug fixes
+- Changed quantile problem (it is now <=33%, >33%-<=66%, >66%)
 
 ## [1.3.0] - 2026-05-05
 ### Added

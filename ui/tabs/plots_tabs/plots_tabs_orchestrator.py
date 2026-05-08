@@ -17,18 +17,20 @@ class PlotsTabMixin(
 ):
     def show_plots_window(self, plots_dir):
         """Add plot tabs to the main notebook."""
-        games_editor_exists = False
-        session_games_exists = False
-        for tab_id in self.main_notebook.tabs():
-            tab_text = self.main_notebook.tab(tab_id, "text")
-            if tab_text == "Games Editor":
-                games_editor_exists = True
-            if tab_text == "Session Games":
-                session_games_exists = True
-
-        num_tabs_to_keep = 1 + int(session_games_exists) + int(games_editor_exists)
-        while len(self.main_notebook.tabs()) > num_tabs_to_keep:
-            self.main_notebook.forget(num_tabs_to_keep)
+        # Keep core tabs and remove only previously generated plot tabs.
+        fixed_tabs = {
+            "Session Generation",
+            "Games Editor",
+            "Session Games",
+            "Contact",
+        }
+        for tab_id in list(self.main_notebook.tabs()):
+            try:
+                tab_text = self.main_notebook.tab(tab_id, "text").strip()
+            except Exception:
+                continue
+            if tab_text not in fixed_tabs:
+                self.main_notebook.forget(tab_id)
 
         png_files = plots_find_png_files(plots_dir)
         if not png_files:
@@ -45,5 +47,8 @@ class PlotsTabMixin(
                 self._add_team_plot_tab(png_file)
             else:
                 self._add_generic_plot_tab(png_file)
+
+        if hasattr(self, "_ensure_contact_tab_last"):
+            self._ensure_contact_tab_last()
 
         print(f"Added {len(png_files)} plot tabs to main window.")

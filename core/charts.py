@@ -935,6 +935,280 @@ def _playershort(player):
         return player[: min(8, len(player))]
 
 
+_SESSION_GAMES_COL_DEFS = [
+    ("#", 3),
+    ("T1  P1", 11),
+    ("T1  P2", 11),
+    ("VS", 4),
+    ("T2  P1", 11),
+    ("T2  P2", 11),
+    ("Δ", 6),
+    ("Info", 9),
+]
+_SESSION_GAMES_TOTAL_COL_W = sum(c[1] for c in _SESSION_GAMES_COL_DEFS)
+_SESSION_GAMES_COL_WS = [
+    c[1] / _SESSION_GAMES_TOTAL_COL_W for c in _SESSION_GAMES_COL_DEFS
+]
+_SESSION_GAMES_COL_XS = []
+_cx = 0.0
+for _w in _SESSION_GAMES_COL_WS:
+    _SESSION_GAMES_COL_XS.append(_cx)
+    _cx += _w
+_SESSION_GAMES_COL_LABELS = [c[0] for c in _SESSION_GAMES_COL_DEFS]
+
+_SESSION_GAMES_TITLE_H = 1.0
+_SESSION_GAMES_HEADER_H = 0.75
+_SESSION_GAMES_ROW_H = 0.75
+_SESSION_GAMES_SIT_H = 0.75
+_SESSION_GAMES_SPACER_H = 0.45
+_SESSION_GAMES_ROW_INCH = 0.38
+_SESSION_GAMES_TARGET_ASPECT = 2.16
+
+_SESSION_GAMES_COLORS = {
+    "round": "#305496",
+    "header": "#366092",
+    "team_a": "#B4C7E7",
+    "team_b": "#F4B084",
+    "vs": "#E7E6E6",
+    "level": "#FFF2CC",
+    "sit": "#FCE4D6",
+    "white": "#FFFFFF",
+    "row2": "#F2F7FF",
+    "border": "#B8B8B8",
+}
+
+_SESSION_GAMES_ROUND_ABBREV = {
+    "balanced": "bal",
+    "level": "lvl",
+    "mixed": "mix",
+    "open": "opn",
+}
+_SESSION_GAMES_GAME_ABBREV = {
+    "balanced": "bal",
+    "level": "lvl",
+    "mixed": "mix",
+    "female": "F",
+    "male": "M",
+    "open": "opn",
+}
+_SESSION_GAMES_NAME_COLS = {1, 2, 4, 5}
+
+
+def _session_games_diff_fg(diff: float) -> str:
+    if diff <= 0.3:
+        return "#1A6B2A"
+    if diff <= 0.8:
+        return "#9B4400"
+    return "#8B0000"
+
+
+def _session_games_round_suffix(round_obj) -> str:
+    rtype = (round_obj.type_preference or "").strip()
+    gpref = (round_obj.gender_preference or "").strip()
+    rtype_abbr = _SESSION_GAMES_ROUND_ABBREV.get(rtype.lower(), rtype)
+    gpref_abbr = _SESSION_GAMES_ROUND_ABBREV.get(gpref.lower(), gpref)
+    parts = [
+        p
+        for p in [rtype_abbr, gpref_abbr]
+        if p and p.lower() not in ("none", "any", "")
+    ]
+    return f"   [{' / '.join(parts)}]" if parts else ""
+
+
+def _session_games_game_info(game) -> str:
+    type_str = (game.type_preference or "").strip()
+    gender_str = (game.gender_preference or "").strip()
+    info = _SESSION_GAMES_GAME_ABBREV.get(type_str.lower(), type_str)
+    gender_abbr = _SESSION_GAMES_GAME_ABBREV.get(gender_str.lower(), gender_str)
+    if gender_abbr and gender_abbr.lower() not in ("none", ""):
+        info += (" / " if info else "") + gender_abbr
+    return info
+
+
+def _session_games_player_text(player, show_levels: bool) -> str:
+    if show_levels:
+        return f"{_playershort(player.name)}\n{player.level:.1f}"
+    return _playershort(player.name)
+
+
+def _session_games_font_size(col_idx: int, show_levels: bool) -> float:
+    if col_idx in _SESSION_GAMES_NAME_COLS:
+        return 8.0 if show_levels else 9.5
+    return 7.0
+
+
+def _session_games_draw_cell(
+    ax,
+    mpatches,
+    x,
+    y,
+    w,
+    h,
+    txt,
+    bg,
+    fg="#111111",
+    bold=False,
+    fs=7.5,
+    ha="center",
+    va="center",
+):
+    rect = mpatches.FancyBboxPatch(
+        (x, y),
+        w,
+        h,
+        boxstyle="square,pad=0",
+        linewidth=0.45,
+        edgecolor=_SESSION_GAMES_COLORS["border"],
+        facecolor=bg,
+        transform=ax.transData,
+        zorder=2,
+        clip_on=False,
+    )
+    ax.add_patch(rect)
+    tx = (x + w / 2) if ha == "center" else (x + w * 0.025)
+    ax.text(
+        tx,
+        y + h / 2,
+        txt,
+        ha=ha,
+        va=va,
+        fontsize=fs,
+        color=fg,
+        fontweight="bold" if bold else "normal",
+        transform=ax.transData,
+        zorder=3,
+        clip_on=True,
+    )
+
+
+def _session_games_round_block_height(round_obj) -> float:
+    return (
+        _SESSION_GAMES_TITLE_H
+        + _SESSION_GAMES_HEADER_H
+        + len(round_obj.games) * _SESSION_GAMES_ROW_H
+        + (_SESSION_GAMES_SIT_H if round_obj.not_playing else 0)
+        + _SESSION_GAMES_SPACER_H
+    )
+
+
+def _render_session_games_round(
+    ax, mpatches, round_obj, round_number: int, y_top: float, show_levels: bool
+) -> float:
+    y = y_top
+    suffix = _session_games_round_suffix(round_obj)
+
+    _session_games_draw_cell(
+        ax,
+        mpatches,
+        0,
+        y,
+        1.0,
+        _SESSION_GAMES_TITLE_H,
+        f"ROUND {round_number}{suffix}",
+        _SESSION_GAMES_COLORS["round"],
+        fg="#FFFFFF",
+        bold=True,
+        fs=8.0,
+    )
+    y += _SESSION_GAMES_TITLE_H
+
+    for lbl, x0, w in zip(
+        _SESSION_GAMES_COL_LABELS, _SESSION_GAMES_COL_XS, _SESSION_GAMES_COL_WS
+    ):
+        _session_games_draw_cell(
+            ax,
+            mpatches,
+            x0,
+            y,
+            w,
+            _SESSION_GAMES_HEADER_H,
+            lbl,
+            _SESSION_GAMES_COLORS["header"],
+            fg="#FFFFFF",
+            bold=True,
+            fs=6.5,
+        )
+    y += _SESSION_GAMES_HEADER_H
+
+    for g_idx, game in enumerate(round_obj.games):
+        row_bg = (
+            _SESSION_GAMES_COLORS["white"]
+            if g_idx % 2 == 0
+            else _SESSION_GAMES_COLORS["row2"]
+        )
+        row_data = [
+            (str(g_idx + 1), row_bg, "#333333", False),
+            (
+                _session_games_player_text(game.team_A.player_A, show_levels),
+                _SESSION_GAMES_COLORS["team_a"],
+                "#1A3A6C",
+                False,
+            ),
+            (
+                _session_games_player_text(game.team_A.player_B, show_levels),
+                _SESSION_GAMES_COLORS["team_a"],
+                "#1A3A6C",
+                False,
+            ),
+            ("VS", _SESSION_GAMES_COLORS["vs"], "#333333", True),
+            (
+                _session_games_player_text(game.team_B.player_A, show_levels),
+                _SESSION_GAMES_COLORS["team_b"],
+                "#5C1A00",
+                False,
+            ),
+            (
+                _session_games_player_text(game.team_B.player_B, show_levels),
+                _SESSION_GAMES_COLORS["team_b"],
+                "#5C1A00",
+                False,
+            ),
+            (
+                f"{game.level_difference:.2f}",
+                _SESSION_GAMES_COLORS["level"],
+                _session_games_diff_fg(game.level_difference),
+                True,
+            ),
+            (_session_games_game_info(game), row_bg, "#555555", False),
+        ]
+        for col_i, ((txt, bg, fg, bold), x0, w) in enumerate(
+            zip(row_data, _SESSION_GAMES_COL_XS, _SESSION_GAMES_COL_WS)
+        ):
+            _session_games_draw_cell(
+                ax,
+                mpatches,
+                x0,
+                y,
+                w,
+                _SESSION_GAMES_ROW_H,
+                txt,
+                bg,
+                fg=fg,
+                bold=bold,
+                fs=_session_games_font_size(col_i, show_levels),
+            )
+        y += _SESSION_GAMES_ROW_H
+
+    if round_obj.not_playing:
+        names = ", ".join(p.name for p in round_obj.not_playing)
+        _session_games_draw_cell(
+            ax,
+            mpatches,
+            0,
+            y,
+            1.0,
+            _SESSION_GAMES_SIT_H,
+            f"Not Playing:  {names}",
+            _SESSION_GAMES_COLORS["sit"],
+            fg="#333333",
+            fs=7.0,
+            ha="left",
+        )
+        y += _SESSION_GAMES_SIT_H
+
+    return y + _SESSION_GAMES_SPACER_H
+
+
 def create_session_games_png(
     session_of_rounds, save_path: str, show_levels: bool = False
 ) -> None:
@@ -960,53 +1234,16 @@ def create_session_games_png(
         return
 
     # ------------------------------------------------------------------
-    # Column definitions  [label, raw_weight]
-    # Matches Excel widths: [8, 18, 18, 6, 18, 18, 12, 20]
-    # ------------------------------------------------------------------
-    COL_DEFS = [
-        ("#", 3),
-        ("T1  P1", 11),
-        ("T1  P2", 11),
-        ("VS", 4),
-        ("T2  P1", 11),
-        ("T2  P2", 11),
-        ("Δ", 6),
-        ("Info", 9),
-    ]
-    total_w = sum(c[1] for c in COL_DEFS)
-    col_ws = [c[1] / total_w for c in COL_DEFS]
-    col_xs = []
-    cx = 0.0
-    for w in col_ws:
-        col_xs.append(cx)
-        cx += w
-    col_labels = [c[0] for c in COL_DEFS]
-
-    # ------------------------------------------------------------------
-    # Row-height units  (1 unit = ROW_INCH inches)
-    # ------------------------------------------------------------------
-    TITLE_H = 1.0  # round title row
-    HEADER_H = 0.75  # column-header row
-    ROW_H = 0.75  # one game row
-    SIT_H = 0.75  # "Not Playing" row
-    SPACER_H = 0.45  # gap between rounds
-    ROW_INCH = 0.38  # inches per unit
-
-    # ------------------------------------------------------------------
     # Compute per-round layout specs and total figure height
     # ------------------------------------------------------------------
     specs = []
     total_h = 0.0
     for r_idx, rnd in enumerate(rounds):
-        n_g = len(rnd.games)
-        has_sit = bool(rnd.not_playing)
-        h = TITLE_H + HEADER_H + n_g * ROW_H + (SIT_H if has_sit else 0) + SPACER_H
+        h = _session_games_round_block_height(rnd)
         specs.append(
             {
                 "rnd": rnd,
                 "r_idx": r_idx,
-                "n_g": n_g,
-                "has_sit": has_sit,
                 "y_top": total_h,
                 "h": h,
             }
@@ -1014,9 +1251,8 @@ def create_session_games_png(
         total_h += h
 
     # Portrait smartphone ratio (~9:19.5 → height/width ≈ 2.16)
-    _TARGET_ASPECT = 2.16
-    fig_h = max(3.0, total_h * ROW_INCH + 0.6)
-    fig_w = max(3.0, fig_h / _TARGET_ASPECT)
+    fig_h = max(3.0, total_h * _SESSION_GAMES_ROW_INCH + 0.6)
+    fig_w = max(3.0, fig_h / _SESSION_GAMES_TARGET_ASPECT)
 
     fig, ax = plt.subplots(figsize=(fig_w, fig_h), facecolor="white")
     # y = 0 at top, increases downward
@@ -1024,201 +1260,15 @@ def create_session_games_png(
     ax.set_ylim(total_h, 0)
     ax.axis("off")
 
-    # ------------------------------------------------------------------
-    # Colors — identical to the xlsx export
-    # ------------------------------------------------------------------
-    C_ROUND = "#305496"  # dark blue  — round title
-    C_HEADER = "#366092"  # medium blue — column headers
-    C_TEAM_A = "#B4C7E7"  # light blue  — Team A cells
-    C_TEAM_B = "#F4B084"  # orange      — Team B cells
-    C_VS = "#E7E6E6"  # light gray  — VS cell
-    C_LEVEL = "#FFF2CC"  # pale yellow — Δ Level cell
-    C_SIT = "#FCE4D6"  # light peach — Not Playing row
-    C_WHITE = "#FFFFFF"
-    C_ROW2 = "#F2F7FF"  # subtle tint for alternating rows
-    C_BORDER = "#B8B8B8"
-
-    def _diff_fg(d: float) -> str:
-        if d <= 0.3:
-            return "#1A6B2A"  # dark green
-        if d <= 0.8:
-            return "#9B4400"  # dark orange
-        return "#8B0000"  # dark red
-
-    def _cell(
-        x, y, w, h, txt, bg, fg="#111111", bold=False, fs=7.5, ha="center", va="center"
-    ):
-        """Draw one filled rectangle with centred/left-aligned text."""
-        rect = mpatches.FancyBboxPatch(
-            (x, y),
-            w,
-            h,
-            boxstyle="square,pad=0",
-            linewidth=0.45,
-            edgecolor=C_BORDER,
-            facecolor=bg,
-            transform=ax.transData,
-            zorder=2,
-            clip_on=False,
-        )
-        ax.add_patch(rect)
-        tx = (x + w / 2) if ha == "center" else (x + w * 0.025)
-        ax.text(
-            tx,
-            y + h / 2,
-            txt,
-            ha=ha,
-            va=va,
-            fontsize=fs,
-            color=fg,
-            fontweight="bold" if bold else "normal",
-            transform=ax.transData,
-            zorder=3,
-            clip_on=True,
-        )
-
-    # ------------------------------------------------------------------
-    # Draw rounds
-    # ------------------------------------------------------------------
     for spec in specs:
-        rnd = spec["rnd"]
-        r_idx = spec["r_idx"]
-        y = spec["y_top"]
-
-        # ---- Round title ------------------------------------------------
-        _ABBREV = {
-            "balanced": "bal",
-            "level": "lvl",
-            "mixed": "mix",
-            "open": "opn",
-        }
-        rtype = (rnd.type_preference or "").strip()
-        gpref = (rnd.gender_preference or "").strip()
-        rtype_abbr = _ABBREV.get(rtype.lower(), rtype)
-        gpref_abbr = _ABBREV.get(gpref.lower(), gpref)
-        parts = [
-            p
-            for p in [rtype_abbr, gpref_abbr]
-            if p and p.lower() not in ("none", "any", "")
-        ]
-        suffix = f"   [{' / '.join(parts)}]" if parts else ""
-        _cell(
-            0,
-            y,
-            1.0,
-            TITLE_H,
-            f"ROUND {r_idx + 1}{suffix}",
-            C_ROUND,
-            fg="#FFFFFF",
-            bold=True,
-            fs=8.0,
+        _render_session_games_round(
+            ax,
+            mpatches,
+            spec["rnd"],
+            spec["r_idx"] + 1,
+            spec["y_top"],
+            show_levels,
         )
-        y += TITLE_H
-
-        # ---- Column headers ---------------------------------------------
-        for lbl, x0, w in zip(col_labels, col_xs, col_ws):
-            _cell(x0, y, w, HEADER_H, lbl, C_HEADER, fg="#FFFFFF", bold=True, fs=6.5)
-        y += HEADER_H
-
-        # ---- Game rows --------------------------------------------------
-        for g_idx, game in enumerate(rnd.games):
-            row_bg = C_WHITE if g_idx % 2 == 0 else C_ROW2
-            pA1 = game.team_A.player_A
-            pA2 = game.team_A.player_B
-            pB1 = game.team_B.player_A
-            pB2 = game.team_B.player_B
-            diff = game.level_difference
-            type_str = (game.type_preference or "").strip()
-            gender_str = (game.gender_preference or "").strip()
-            _ABBREV_GAME = {
-                "balanced": "bal",
-                "level": "lvl",
-                "mixed": "mix",
-                "female": "F",
-                "male": "M",
-                "open": "opn",
-            }
-            info = _ABBREV_GAME.get(type_str.lower(), type_str)
-            gender_abbr = _ABBREV_GAME.get(gender_str.lower(), gender_str)
-            if gender_abbr and gender_abbr.lower() not in ("none", ""):
-                info += (" / " if info else "") + gender_abbr
-
-            row = [
-                (str(g_idx + 1), row_bg, "#333333", False),
-                (
-                    (
-                        f"{_playershort(pA1.name)}\n{pA1.level:.1f}"
-                        if show_levels
-                        else _playershort(pA1.name)
-                    ),
-                    C_TEAM_A,
-                    "#1A3A6C",
-                    False,
-                ),
-                (
-                    (
-                        f"{_playershort(pA2.name)}\n{pA2.level:.1f}"
-                        if show_levels
-                        else _playershort(pA2.name)
-                    ),
-                    C_TEAM_A,
-                    "#1A3A6C",
-                    False,
-                ),
-                ("VS", C_VS, "#333333", True),
-                (
-                    (
-                        f"{_playershort(pB1.name)}\n{pB1.level:.1f}"
-                        if show_levels
-                        else _playershort(pB1.name)
-                    ),
-                    C_TEAM_B,
-                    "#5C1A00",
-                    False,
-                ),
-                (
-                    (
-                        f"{_playershort(pB2.name)}\n{pB2.level:.1f}"
-                        if show_levels
-                        else _playershort(pB2.name)
-                    ),
-                    C_TEAM_B,
-                    "#5C1A00",
-                    False,
-                ),
-                (f"{diff:.2f}", C_LEVEL, _diff_fg(diff), True),
-                (info, row_bg, "#555555", False),
-            ]
-            # Player-name columns: indices 1,2,4,5 get +20% font size
-            _NAME_COLS = {1, 2, 4, 5}
-            for col_i, ((txt, bg, fg, bold), x0, w) in enumerate(
-                zip(row, col_xs, col_ws)
-            ):
-                if _NAME_COLS:
-                    if show_levels:
-                        fs = 8.0
-                    else:
-                        fs = 9.5
-                else:
-                    fs = 7.0
-                _cell(x0, y, w, ROW_H, txt, bg, fg=fg, bold=bold, fs=fs)
-            y += ROW_H
-
-        # ---- Not-playing row --------------------------------------------
-        if rnd.not_playing:
-            names = ", ".join(p.name for p in rnd.not_playing)
-            _cell(
-                0,
-                y,
-                1.0,
-                SIT_H,
-                f"Not Playing:  {names}",
-                C_SIT,
-                fg="#333333",
-                fs=7.0,
-                ha="left",
-            )
-            y += SIT_H
 
     # ------------------------------------------------------------------
     # Title and save
@@ -1259,8 +1309,8 @@ def create_session_games_round_images(
     """
     import io  # noqa: PLC0415
 
-    import matplotlib.patches as mpatches  # noqa: PLC0415
     import matplotlib.pyplot as plt  # noqa: PLC0415
+    import matplotlib.patches as mpatches  # noqa: PLC0415
     from PIL import Image  # noqa: PLC0415
 
     plt.close("all")
@@ -1269,254 +1319,31 @@ def create_session_games_round_images(
     if not rounds:
         return []
 
-    # ------------------------------------------------------------------ constants
-    TITLE_H = 1.0
-    HEADER_H = 0.75
-    ROW_H = 0.75
-    SIT_H = 0.75
-    SPACER_H = 0.45
-    ROW_INCH = 0.38
-    _TARGET_ASPECT = 2.16
-
-    COL_DEFS = [
-        ("#", 3),
-        ("T1  P1", 11),
-        ("T1  P2", 11),
-        ("VS", 4),
-        ("T2  P1", 11),
-        ("T2  P2", 11),
-        ("Δ", 6),
-        ("Info", 9),
-    ]
-    total_col_w = sum(c[1] for c in COL_DEFS)
-    col_ws = [c[1] / total_col_w for c in COL_DEFS]
-    col_xs: list = []
-    cx = 0.0
-    for w in col_ws:
-        col_xs.append(cx)
-        cx += w
-    col_labels = [c[0] for c in COL_DEFS]
-
     # Derive a *consistent* figure width from the combined-session layout so that
     # individual round images are the same width as the combined PNG.
-    total_h = sum(
-        TITLE_H
-        + HEADER_H
-        + len(rnd.games) * ROW_H
-        + (SIT_H if rnd.not_playing else 0)
-        + SPACER_H
-        for rnd in rounds
-    )
-    fig_h_total = max(3.0, total_h * ROW_INCH + 0.6)
-    fig_w = max(3.0, fig_h_total / _TARGET_ASPECT)
-
-    # ------------------------------------------------------------------ colors
-    C_ROUND = "#305496"
-    C_HEADER = "#366092"
-    C_TEAM_A = "#B4C7E7"
-    C_TEAM_B = "#F4B084"
-    C_VS = "#E7E6E6"
-    C_LEVEL = "#FFF2CC"
-    C_SIT = "#FCE4D6"
-    C_WHITE = "#FFFFFF"
-    C_ROW2 = "#F2F7FF"
-    C_BORDER = "#B8B8B8"
-
-    def _diff_fg(d: float) -> str:
-        if d <= 0.3:
-            return "#1A6B2A"
-        if d <= 0.8:
-            return "#9B4400"
-        return "#8B0000"
+    total_h = sum(_session_games_round_block_height(rnd) for rnd in rounds)
+    fig_h_total = max(3.0, total_h * _SESSION_GAMES_ROW_INCH + 0.6)
+    fig_w = max(3.0, fig_h_total / _SESSION_GAMES_TARGET_ASPECT)
 
     # ------------------------------------------------------------------ per-round render
     images = []
-    _ABBREV = {"balanced": "bal", "level": "lvl", "mixed": "mix", "open": "opn"}
-    _ABBREV_GAME = {
-        "balanced": "bal",
-        "level": "lvl",
-        "mixed": "mix",
-        "female": "F",
-        "male": "M",
-        "open": "opn",
-    }
-    _NAME_COLS = {1, 2, 4, 5}
 
     for disp_idx, rnd in enumerate(rounds):
-        n_g = len(rnd.games)
-        has_sit = bool(rnd.not_playing)
-        rnd_h = TITLE_H + HEADER_H + n_g * ROW_H + (SIT_H if has_sit else 0) + SPACER_H
-        fig_h = max(1.0, rnd_h * ROW_INCH + 0.1)
+        rnd_h = _session_games_round_block_height(rnd)
+        fig_h = max(1.0, rnd_h * _SESSION_GAMES_ROW_INCH + 0.1)
 
         fig, ax = plt.subplots(figsize=(fig_w, fig_h), facecolor="white")
         ax.set_xlim(0, 1)
         ax.set_ylim(rnd_h, 0)
         ax.axis("off")
-
-        # Local _cell bound to this iteration's ax via default argument
-        def _cell(
-            x,
-            y,
-            w,
-            h,
-            txt,
-            bg,
-            fg="#111111",
-            bold=False,
-            fs=7.5,
-            ha="center",
-            va="center",
-            _ax=ax,
-            _border=C_BORDER,
-        ):
-            rect = mpatches.FancyBboxPatch(
-                (x, y),
-                w,
-                h,
-                boxstyle="square,pad=0",
-                linewidth=0.45,
-                edgecolor=_border,
-                facecolor=bg,
-                transform=_ax.transData,
-                zorder=2,
-                clip_on=False,
-            )
-            _ax.add_patch(rect)
-            tx = (x + w / 2) if ha == "center" else (x + w * 0.025)
-            _ax.text(
-                tx,
-                y + h / 2,
-                txt,
-                ha=ha,
-                va="center",
-                fontsize=fs,
-                color=fg,
-                fontweight="bold" if bold else "normal",
-                transform=_ax.transData,
-                zorder=3,
-                clip_on=True,
-            )
-
-        y = 0.0
-
-        # Round title
-        rtype = (rnd.type_preference or "").strip()
-        gpref = (rnd.gender_preference or "").strip()
-        rtype_abbr = _ABBREV.get(rtype.lower(), rtype)
-        gpref_abbr = _ABBREV.get(gpref.lower(), gpref)
-        parts = [
-            p
-            for p in [rtype_abbr, gpref_abbr]
-            if p and p.lower() not in ("none", "any", "")
-        ]
-        suffix = f"   [{' / '.join(parts)}]" if parts else ""
-        _cell(
-            0,
-            y,
-            1.0,
-            TITLE_H,
-            f"ROUND {disp_idx + 1}{suffix}",
-            C_ROUND,
-            fg="#FFFFFF",
-            bold=True,
-            fs=8.0,
+        _render_session_games_round(
+            ax,
+            mpatches,
+            rnd,
+            disp_idx + 1,
+            0.0,
+            show_levels,
         )
-        y += TITLE_H
-
-        # Column headers
-        for lbl, x0, w in zip(col_labels, col_xs, col_ws):
-            _cell(x0, y, w, HEADER_H, lbl, C_HEADER, fg="#FFFFFF", bold=True, fs=6.5)
-        y += HEADER_H
-
-        # Game rows
-        for g_idx, game in enumerate(rnd.games):
-            row_bg = C_WHITE if g_idx % 2 == 0 else C_ROW2
-
-            pA1 = game.team_A.player_A
-            pA2 = game.team_A.player_B
-            pB1 = game.team_B.player_A
-            pB2 = game.team_B.player_B
-            diff = game.level_difference
-            type_str = (game.type_preference or "").strip()
-            gender_str = (game.gender_preference or "").strip()
-            info = _ABBREV_GAME.get(type_str.lower(), type_str)
-            gender_abbr = _ABBREV_GAME.get(gender_str.lower(), gender_str)
-            if gender_abbr and gender_abbr.lower() not in ("none", ""):
-                info += (" / " if info else "") + gender_abbr
-
-            row_data = [
-                (str(g_idx + 1), row_bg, "#333333", False),
-                (
-                    (
-                        f"{_playershort(pA1.name)}\n{pA1.level:.1f}"
-                        if show_levels
-                        else _playershort(pA1.name)
-                    ),
-                    C_TEAM_A,
-                    "#1A3A6C",
-                    False,
-                ),
-                (
-                    (
-                        f"{_playershort(pA2.name)}\n{pA2.level:.1f}"
-                        if show_levels
-                        else _playershort(pA2.name)
-                    ),
-                    C_TEAM_A,
-                    "#1A3A6C",
-                    False,
-                ),
-                ("VS", C_VS, "#333333", True),
-                (
-                    (
-                        f"{_playershort(pB1.name)}\n{pB1.level:.1f}"
-                        if show_levels
-                        else _playershort(pB1.name)
-                    ),
-                    C_TEAM_B,
-                    "#5C1A00",
-                    False,
-                ),
-                (
-                    (
-                        f"{_playershort(pB2.name)}\n{pB2.level:.1f}"
-                        if show_levels
-                        else _playershort(pB2.name)
-                    ),
-                    C_TEAM_B,
-                    "#5C1A00",
-                    False,
-                ),
-                (f"{diff:.2f}", C_LEVEL, _diff_fg(diff), True),
-                (info, row_bg, "#555555", False),
-            ]
-            for col_i, ((txt, bg, fg, bold), x0, w) in enumerate(
-                zip(row_data, col_xs, col_ws)
-            ):
-                if _NAME_COLS:
-                    if show_levels:
-                        fs = 8.0
-                    else:
-                        fs = 9.5
-                else:
-                    fs = 7.0
-                _cell(x0, y, w, ROW_H, txt, bg, fg=fg, bold=bold, fs=fs)
-            y += ROW_H
-
-        # Not-playing row
-        if rnd.not_playing:
-            names = ", ".join(p.name for p in rnd.not_playing)
-            _cell(
-                0,
-                y,
-                1.0,
-                SIT_H,
-                f"Not Playing:  {names}",
-                C_SIT,
-                fg="#333333",
-                fs=7.0,
-                ha="left",
-            )
 
         plt.tight_layout(pad=0.1)
         buf = io.BytesIO()
