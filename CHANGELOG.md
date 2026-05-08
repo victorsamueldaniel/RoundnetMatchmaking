@@ -5,9 +5,11 @@ All notable changes to this project are documented in this file.
 - Added a contact page tab.
 - The Games Editor now detects over-benched players live during pending swaps and marks every matching Not Playing button across rounds with a black background, white text, and a middle SAD! label.
 This behavior is implemented through a centralized, token-based button text/style system so the middle-line UI text can be changed later without rewriting swap or refresh logic.
+- possibility to have 3 and 4 in prefered pair selection window.
 ### Changed
 - Names of tabs scripts
 - Changed placement of show level on PNG button. It is now in session games tab and allow dynamic changes
+- major change to prefered pair: now it checks for best swap amongst all possible rounds and pairs swapped, instead of greedy searching for each round and each pair. There is a happiness computed (default [...14,12,10,8,8], and cutting starting at the end,depending on amount of games wanted: e.g. 3 games wanted, happiness is [10,8,8])
 ### Removed
 ### Bug fixes
 - Changed quantile problem (it is now <=33%, >33%-<=66%, >66%)

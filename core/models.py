@@ -342,6 +342,7 @@ class Player:
         never_met_players_in_game_count=0,
         never_met_bonus_per_player=2,
         never_met_bonus_cap=4,
+        preferred_pair_bonus=0,
     ):
         initial_happiness = self.happiness
 
@@ -438,6 +439,8 @@ class Player:
             elif session_median is not None:
                 if player_level > session_median:
                     self.happiness += 1
+
+        self.happiness += preferred_pair_bonus
 
         # Store the happiness gained for this game
         self.last_happiness_gained = self.happiness - initial_happiness

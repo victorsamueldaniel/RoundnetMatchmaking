@@ -1763,10 +1763,8 @@ class SessionGenerationTabMixin:
         win.resizable(True, True)
         win.grab_set()
 
-        W, H = 820, 660
-        win.update_idletasks()
-        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
-        win.geometry(f"{W}x{H}+{(sw - W) // 2}+{(sh - H) // 2}")
+        H = 660
+        win.withdraw()  # hide until sized
 
         # Working copies so cancelling has no effect
         # Each entry is (frozenset({name1, name2}), forced_games)
@@ -1896,11 +1894,18 @@ class SessionGenerationTabMixin:
             for fs, _fg in pairs_working:
                 if name in fs:
                     return WHITE
+            if name not in self.selected_players:
+                return "#888888"
             return self.colors["text_dark"]
+
+        def _btn_font(name):
+            if name in self.selected_players:
+                return ("Arial", 9, "bold")
+            return ("Arial", 9)
 
         def _refresh_grid():
             for name, btn in btn_refs.items():
-                btn.config(bg=_btn_bg(name), fg=_btn_fg(name))
+                btn.config(bg=_btn_bg(name), fg=_btn_fg(name), font=_btn_font(name))
 
         def _on_player_click(name):
             if name in pending:
@@ -1918,7 +1923,7 @@ class SessionGenerationTabMixin:
             btn = tk.Button(
                 grid_frame,
                 text=name,
-                font=("Arial", 9),
+                font=_btn_font(name),
                 bg=_btn_bg(name),
                 fg=_btn_fg(name),
                 relief=tk.RAISED,
@@ -1964,6 +1969,30 @@ class SessionGenerationTabMixin:
             pady=6,
             state=tk.DISABLED,
         )
+        add_3_btn = tk.Button(
+            footer,
+            text="Add pair  ·  3 games 🔒",
+            font=("Arial", 11, "bold"),
+            bg="#1B5E20",
+            fg=WHITE,
+            relief=tk.RAISED,
+            cursor="hand2",
+            padx=16,
+            pady=6,
+            state=tk.DISABLED,
+        )
+        add_4_btn = tk.Button(
+            footer,
+            text="Add pair  ·  4 games 🔒",
+            font=("Arial", 11, "bold"),
+            bg="#004D40",
+            fg=WHITE,
+            relief=tk.RAISED,
+            cursor="hand2",
+            padx=16,
+            pady=6,
+            state=tk.DISABLED,
+        )
         remove_btn = tk.Button(
             footer,
             text="Remove last pair",
@@ -1978,10 +2007,10 @@ class SessionGenerationTabMixin:
         )
         close_btn = tk.Button(
             footer,
-            text="Close",
+            text="Confirm",
             font=("Arial", 11),
-            bg="#555555",
-            fg=WHITE,
+            bg=self.colors["accent_yellow"],
+            fg=self.colors["text_dark"],
             relief=tk.RAISED,
             cursor="hand2",
             padx=16,
@@ -1997,6 +2026,8 @@ class SessionGenerationTabMixin:
                     can_add = True
             add_1_btn.config(state=tk.NORMAL if can_add else tk.DISABLED)
             add_2_btn.config(state=tk.NORMAL if can_add else tk.DISABLED)
+            add_3_btn.config(state=tk.NORMAL if can_add else tk.DISABLED)
+            add_4_btn.config(state=tk.NORMAL if can_add else tk.DISABLED)
             remove_btn.config(state=tk.NORMAL if pairs_working else tk.DISABLED)
 
         def _on_add(forced_games):
@@ -2024,11 +2055,15 @@ class SessionGenerationTabMixin:
 
         add_1_btn.config(command=lambda: _on_add(1))
         add_2_btn.config(command=lambda: _on_add(2))
+        add_3_btn.config(command=lambda: _on_add(3))
+        add_4_btn.config(command=lambda: _on_add(4))
         remove_btn.config(command=_on_remove)
         close_btn.config(command=_on_close)
 
         add_1_btn.pack(side=tk.LEFT, padx=(0, 6))
-        add_2_btn.pack(side=tk.LEFT, padx=(0, 8))
+        add_2_btn.pack(side=tk.LEFT, padx=(0, 6))
+        add_3_btn.pack(side=tk.LEFT, padx=(0, 6))
+        add_4_btn.pack(side=tk.LEFT, padx=(0, 8))
         remove_btn.pack(side=tk.LEFT, padx=(0, 8))
         close_btn.pack(side=tk.RIGHT)
 
@@ -2037,6 +2072,13 @@ class SessionGenerationTabMixin:
         # Initial render
         refresh_pairs_display()
         _check_buttons()
+
+        # Size the window to fit its content width, then centre it
+        win.update_idletasks()
+        W = win.winfo_reqwidth()
+        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+        win.geometry(f"{W}x{H}+{(sw - W) // 2}+{(sh - H) // 2}")
+        win.deiconify()
 
     def _show_player_dialog(self, player_name=None):
         """Unified add/edit player dialog.  player_name=None → add mode."""
@@ -2692,6 +2734,10 @@ class SessionGenerationTabMixin:
                     session_of_rounds,
                     preferred_pairs,
                     lambda_weight=lambda_weight,
+                )
+                main_module.apply_preferred_pairs_happiness(
+                    session_of_rounds,
+                    preferred_pairs,
                 )
 
             # Close progress dialog

@@ -27,6 +27,7 @@ from core.charts import (  # noqa: F401
 )
 from core.algorithm import run_session_generation_with_seed_optimization  # noqa: F401
 from core.algorithm import force_preferred_pairs_in_session  # noqa: F401
+from core.algorithm import apply_preferred_pairs_happiness  # noqa: F401
 
 # Ensure legacy references to module name "main" remain importable. This is
 # required for pickle compatibility with objects that encode class paths as

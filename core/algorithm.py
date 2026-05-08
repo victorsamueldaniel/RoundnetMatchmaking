@@ -296,38 +296,37 @@ def _balance_ok(session):
     return max(counts.values()) - min(counts.values()) <= 1
 
 
-def _try_swap(
-    round_obj, round_idx, pos_a, pos_b, session, base_score, lambda_weight, score_tol
-):
-    """Attempt to swap the players at pos_a and pos_b.
+def _affected_game_idxs(pos_a, pos_b):
+    """Return the set of game indices affected by swapping pos_a and pos_b."""
+    game_idxs = set()
+    for pos in (pos_a, pos_b):
+        if pos[0] == "game":
+            game_idxs.add(pos[1])
+    return game_idxs
 
-    Validates level gap, games balance, gender preference and score tolerance.
-    Returns True and keeps the swap if all constraints are satisfied; otherwise
-    undoes the swap and returns False.
+
+def _evaluate_swap_score(round_obj, round_idx, pos_a, pos_b, session, lambda_weight):
+    """Evaluate a candidate swap and return the resulting session score, or None if invalid.
+
+    All constraint checks (level gap, balance, gender preference) are performed and
+    the swap is always fully undone before returning.
     """
     round_obj.swap_player_positions(pos_a, pos_b)
 
-    # --- Level gap check (fast — mean_level already updated by swap_player_positions) ---
-    def _affected_games():
-        game_idxs = set()
-        for pos in (pos_a, pos_b):
-            if pos[0] == "game":
-                game_idxs.add(pos[1])
-        return game_idxs
-
-    for game_idx in _affected_games():
+    # --- Level gap check ---
+    for game_idx in _affected_game_idxs(pos_a, pos_b):
         game = round_obj.games[game_idx]
         if (
             abs(game.team_A.mean_level - game.team_B.mean_level)
             > round_obj.level_gap_tol
         ):
             round_obj.swap_player_positions(pos_a, pos_b)
-            return False
+            return None
 
     # --- Games balance check ---
     if not _balance_ok(session):
         round_obj.swap_player_positions(pos_a, pos_b)
-        return False
+        return None
 
     # --- Recalculate happiness (rebuilds team objects, updates all histories) ---
     round_obj.recalculate_happiness(round_idx)
@@ -336,16 +335,15 @@ def _try_swap(
     if not all(g.is_gender_preference_satisfied for g in round_obj.games):
         round_obj.swap_player_positions(pos_a, pos_b)
         round_obj.recalculate_happiness(round_idx)
-        return False
+        return None
 
-    # --- Score tolerance check ---
-    new_score = _session_score(session, lambda_weight)
-    if new_score < base_score * (1.0 - score_tol):
-        round_obj.swap_player_positions(pos_a, pos_b)
-        round_obj.recalculate_happiness(round_idx)
-        return False
+    # --- Compute score ---
+    score = _session_score(session, lambda_weight)
 
-    return True
+    # --- Always undo ---
+    round_obj.swap_player_positions(pos_a, pos_b)
+    round_obj.recalculate_happiness(round_idx)
+    return score
 
 
 def force_preferred_pairs_in_session(
@@ -370,7 +368,8 @@ def force_preferred_pairs_in_session(
       - Gender preference per game is not violated.
       - Session score does not drop more than *score_tolerance* (10 %).
 
-    The first valid swap found per round is accepted (no exhaustive search).
+    All candidate swaps across all pending pairs and all rounds compete at each
+    step; the single best valid swap is applied (global-greedy).
     After all pairs have been processed the session-level cached stats are
     refreshed.
     """
@@ -402,15 +401,19 @@ def force_preferred_pairs_in_session(
         return
 
     base_score = _session_score(session, lambda_weight)
+    score_threshold = base_score * (1.0 - score_tolerance)
 
+    # Resolve player objects and compute how many rounds each pair still needs
+    players_per_pair = []
+    needed = []
     for pair_fs, pair_forced_games in normalized_pairs:
         names = sorted(pair_fs)
         player1 = next((p for p in session.players if p.name == names[0]), None)
         player2 = next((p for p in session.players if p.name == names[1]), None)
+        players_per_pair.append((player1, player2))
         if player1 is None or player2 is None:
+            needed.append(0)
             continue
-
-        # Count rounds where the pair is already teammates
         already = sum(
             1
             for r in session.rounds
@@ -418,99 +421,170 @@ def force_preferred_pairs_in_session(
                 r.find_player_position(player1), r.find_player_position(player2)
             )
         )
-        needed = pair_forced_games - already
-        if needed <= 0:
+        needed.append(max(0, pair_forced_games - already))
+
+    # Global-greedy: at each step apply the single best valid swap across all
+    # pending pairs × all rounds, then repeat until all pairs are satisfied or
+    # no valid swap remains.
+    while any(n > 0 for n in needed):
+        best_score = None
+        best_candidate = None  # (pair_idx, round_idx, round_obj, pos_a, pos_b)
+
+        for pair_idx, (pair_fs, _) in enumerate(normalized_pairs):
+            if needed[pair_idx] <= 0:
+                continue
+            player1, player2 = players_per_pair[pair_idx]
+            if player1 is None or player2 is None:
+                continue
+
+            for round_idx, round_obj in enumerate(session.rounds):
+                pos1 = round_obj.find_player_position(player1)
+                pos2 = round_obj.find_player_position(player2)
+
+                # Already teammates in this round — skip
+                if _are_teammates(pos1, pos2):
+                    continue
+
+                if pos1 is None or pos2 is None:
+                    continue
+
+                # Both sitting out — nothing to do in this round
+                if pos1[0] == "not_playing" and pos2[0] == "not_playing":
+                    continue
+
+                # Build up to two candidate (pos_a, pos_b) swaps for this round
+                if pos1[0] == "game" and pos2[0] == "game":
+                    candidates_this_round = [
+                        (_get_teammate_pos(pos1), pos2),
+                        (_get_teammate_pos(pos2), pos1),
+                    ]
+                elif pos1[0] == "not_playing":
+                    # player1 sitting out; swap player2's teammate for player1
+                    candidates_this_round = [(pos1, _get_teammate_pos(pos2))]
+                else:
+                    # player2 sitting out; swap player1's teammate for player2
+                    candidates_this_round = [(pos2, _get_teammate_pos(pos1))]
+
+                for pos_a, pos_b in candidates_this_round:
+                    score = _evaluate_swap_score(
+                        round_obj, round_idx, pos_a, pos_b, session, lambda_weight
+                    )
+                    if score is not None and score >= score_threshold:
+                        if best_score is None or score > best_score:
+                            best_score = score
+                            best_candidate = (
+                                pair_idx,
+                                round_idx,
+                                round_obj,
+                                pos_a,
+                                pos_b,
+                            )
+
+        if best_candidate is None:
+            break  # No valid swap exists for any pending pair
+
+        pair_idx, round_idx, round_obj, pos_a, pos_b = best_candidate
+        round_obj.swap_player_positions(pos_a, pos_b)
+        round_obj.recalculate_happiness(round_idx)
+        needed[pair_idx] -= 1
+
+    # Refresh session-level cached statistics
+    happinesses = [p.happiness for p in session.players]
+    session.mean_happiness = np.mean(happinesses)
+    session.std_happiness = np.std(happinesses)
+    session.max_and_min_happiness = (max(happinesses), min(happinesses))
+    session.max_happiness_difference = (
+        session.max_and_min_happiness[0] - session.max_and_min_happiness[1]
+    )
+    for player in session.players:
+        player.relative_happiness = player.happiness - session.mean_happiness
+
+
+def apply_preferred_pairs_happiness(session, preferred_pairs):
+    """Award happiness bonuses to preferred-pair members for rounds spent together.
+
+    For each pair requesting ``n`` forced games together the bonus schedule is:
+        ``[max(8, 2*(n-k+2)) for k in range(n)]``
+    giving e.g. [8] for n=1, [8,8] for n=2, [10,8,8] for n=3, [12,10,8,8] for n=4.
+
+    Additionally, the never-met bonus (+2 per player) is removed for the first
+    round each pair shared a game, since they were deliberately paired together.
+
+    Session-level cached statistics are refreshed at the end.
+    """
+    if not preferred_pairs:
+        return
+
+    # Normalise pairs to (frozenset_of_names, n) — same logic as force_preferred_pairs_in_session
+    normalized_pairs = []
+    for pair_entry in preferred_pairs:
+        if (
+            isinstance(pair_entry, (tuple, list))
+            and len(pair_entry) == 2
+            and isinstance(pair_entry[1], (int, float))
+        ):
+            pair_fs = frozenset(pair_entry[0])
+            n = max(1, int(pair_entry[1]))
+        else:
+            pair_fs = frozenset(pair_entry)
+            n = 1
+        if len(pair_fs) != 2:
+            continue
+        normalized_pairs.append((pair_fs, n))
+
+    if not normalized_pairs:
+        return
+
+    # never_met_bonus_per_player — read from the first round if available, fallback 2
+    never_met_per_player = 2
+    if session.rounds:
+        never_met_per_player = getattr(
+            session.rounds[0], "never_met_bonus_per_player", 2
+        )
+
+    # Build name → player lookup
+    player_by_name = {p.name: p for p in session.players}
+
+    # Per-round award tracking so the Games Editor can reverse and re-apply bonuses
+    # after manual swaps. Shape: {player_name: [bonus_r0, bonus_r1, ...]}.
+    num_rounds = len(session.rounds)
+    per_round_awards = {p.name: [0] * num_rounds for p in session.players}
+
+    for pair_fs, n in normalized_pairs:
+        names = sorted(pair_fs)
+        p1 = player_by_name.get(names[0])
+        p2 = player_by_name.get(names[1])
+        if p1 is None or p2 is None:
             continue
 
-        rounds_forced = 0
-        for round_idx, round_obj in enumerate(session.rounds):
-            if rounds_forced >= needed:
-                break
+        bonus_list = [max(8, 2 * (n - k + 2)) for k in range(n)]
+        pair_player_frozenset = frozenset({p1, p2})
 
-            pos1 = round_obj.find_player_position(player1)
-            pos2 = round_obj.find_player_position(player2)
+        rounds_together = 0  # how many rounds they have been teammates so far
 
-            # Already teammates in this round — skip
-            if _are_teammates(pos1, pos2):
-                continue
+        for r_idx, round_obj in enumerate(session.rounds):
+            # Check if they are teammates this round
+            are_teammates = any(
+                pair_player_frozenset == team.players_frozenset
+                for game in round_obj.games
+                for team in game.teams
+            )
 
-            if pos1 is None or pos2 is None:
-                continue
+            if are_teammates:
+                k = min(rounds_together, len(bonus_list) - 1)
+                bonus = bonus_list[k]
+                # On the first round together, offset the never-met bonus they
+                # received during generation (they were never "strangers").
+                if rounds_together == 0:
+                    bonus -= never_met_per_player
+                p1.happiness += bonus
+                p2.happiness += bonus
+                per_round_awards[p1.name][r_idx] += bonus
+                per_round_awards[p2.name][r_idx] += bonus
+                rounds_together += 1
 
-            # Both sitting out — nothing to do in this round
-            if pos1[0] == "not_playing" and pos2[0] == "not_playing":
-                continue
-
-            swapped = False
-
-            if pos1[0] == "game" and pos2[0] == "game":
-                # Try: put player2 onto player1's team by swapping player1's teammate out
-                mate1_pos = _get_teammate_pos(pos1)
-                if _try_swap(
-                    round_obj,
-                    round_idx,
-                    mate1_pos,
-                    pos2,
-                    session,
-                    base_score,
-                    lambda_weight,
-                    score_tolerance,
-                ):
-                    swapped = True
-                else:
-                    # Re-fetch positions (they're still stable by index, but being explicit)
-                    pos1 = round_obj.find_player_position(player1)
-                    pos2 = round_obj.find_player_position(player2)
-                    # Try: put player1 onto player2's team by swapping player2's teammate out
-                    mate2_pos = _get_teammate_pos(pos2)
-                    if _try_swap(
-                        round_obj,
-                        round_idx,
-                        mate2_pos,
-                        pos1,
-                        session,
-                        base_score,
-                        lambda_weight,
-                        score_tolerance,
-                    ):
-                        swapped = True
-
-            elif pos1[0] == "not_playing":
-                # player1 is sitting out; swap player2's teammate for player1
-                pos2 = round_obj.find_player_position(player2)
-                mate2_pos = _get_teammate_pos(pos2)
-                pos1 = round_obj.find_player_position(player1)
-                if _try_swap(
-                    round_obj,
-                    round_idx,
-                    pos1,
-                    mate2_pos,
-                    session,
-                    base_score,
-                    lambda_weight,
-                    score_tolerance,
-                ):
-                    swapped = True
-
-            else:
-                # player2 is sitting out; swap player1's teammate for player2
-                pos1 = round_obj.find_player_position(player1)
-                mate1_pos = _get_teammate_pos(pos1)
-                pos2 = round_obj.find_player_position(player2)
-                if _try_swap(
-                    round_obj,
-                    round_idx,
-                    pos2,
-                    mate1_pos,
-                    session,
-                    base_score,
-                    lambda_weight,
-                    score_tolerance,
-                ):
-                    swapped = True
-
-            if swapped:
-                rounds_forced += 1
+    # Store per-round awards on the session for Games Editor use
+    session._pair_happiness_per_round = per_round_awards
 
     # Refresh session-level cached statistics
     happinesses = [p.happiness for p in session.players]

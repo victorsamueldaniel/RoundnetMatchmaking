@@ -947,6 +947,79 @@ class GamesEditorTabMixin:
             else:
                 new_gains[p.name] = None
 
+        # ---- 4.5. Compute pair bonus deltas for this round ----
+        # happiness_gained_history only tracks game-mechanics gains; the pair bonus
+        # lives separately in player.happiness.  We compute its expected change here
+        # so the preview colour correctly reflects pair-related happiness shifts.
+        pair_bonus_deltas = {}
+        if getattr(self, "preferred_pairs", None) and hasattr(
+            self.session_of_rounds, "_pair_happiness_per_round"
+        ):
+            per_round = self.session_of_rounds._pair_happiness_per_round
+            never_met_per_player = 2
+            if self.session_of_rounds.rounds:
+                never_met_per_player = getattr(
+                    self.session_of_rounds.rounds[0], "never_met_bonus_per_player", 2
+                )
+            player_by_name = {p.name: p for p in all_players}
+            for pair_entry in self.preferred_pairs:
+                if (
+                    isinstance(pair_entry, (tuple, list))
+                    and len(pair_entry) == 2
+                    and isinstance(pair_entry[1], (int, float))
+                ):
+                    _pair_fs = frozenset(pair_entry[0])
+                    _n = max(1, int(pair_entry[1]))
+                else:
+                    _pair_fs = frozenset(pair_entry)
+                    _n = 1
+                if len(_pair_fs) != 2:
+                    continue
+                _names = sorted(_pair_fs)
+                _pp1 = player_by_name.get(_names[0])
+                _pp2 = player_by_name.get(_names[1])
+                if _pp1 is None or _pp2 is None:
+                    continue
+                _bonus_list = [max(8, 2 * (_n - k + 2)) for k in range(_n)]
+                _pair_pfs = frozenset({_pp1, _pp2})
+
+                # Old bonus this pair received for this specific round
+                _p1_awards = per_round.get(_pp1.name, [])
+                _old_bonus = _p1_awards[round_idx] if round_idx < len(_p1_awards) else 0
+
+                # How many rounds before round_idx were they teammates (current session state)?
+                _rounds_before = sum(
+                    1
+                    for _ri in range(round_idx)
+                    for _g in self.session_of_rounds.rounds[_ri].games
+                    for _t in _g.teams
+                    if _pair_pfs == _t.players_frozenset
+                )
+
+                # Are they teammates in the simulated (swapped) state for this round?
+                _teammates_now = any(
+                    _pair_pfs == _t.players_frozenset
+                    for _g in game_round.games
+                    for _t in _g.teams
+                )
+
+                if _teammates_now:
+                    _k = min(_rounds_before, len(_bonus_list) - 1)
+                    _new_bonus = _bonus_list[_k]
+                    if _rounds_before == 0:
+                        _new_bonus -= never_met_per_player
+                else:
+                    _new_bonus = 0
+
+                _delta = _new_bonus - _old_bonus
+                if _delta != 0:
+                    pair_bonus_deltas[_pp1.name] = (
+                        pair_bonus_deltas.get(_pp1.name, 0) + _delta
+                    )
+                    pair_bonus_deltas[_pp2.name] = (
+                        pair_bonus_deltas.get(_pp2.name, 0) + _delta
+                    )
+
         # ---- 5. Restore player state ----
         for p in all_players:
             snap = player_snapshots.get(p.name)
@@ -983,7 +1056,7 @@ class GamesEditorTabMixin:
             base_gain = baseline.get(name)
             new_val = new_gain if new_gain is not None else 0.0
             base_val = base_gain if base_gain is not None else 0.0
-            deltas[name] = new_val - base_val
+            deltas[name] = (new_val - base_val) + pair_bonus_deltas.get(name, 0)
 
         return deltas
 
@@ -1432,6 +1505,23 @@ class GamesEditorTabMixin:
                 self.session_of_rounds.std_happiness = np.std(
                     [player.happiness for player in self.session_of_rounds.players]
                 )
+
+        # Re-apply preferred pair bonuses with updated team assignments.
+        # recalculate_happiness only redoes game-mechanics gains; the pair bonus
+        # (added directly to player.happiness) must be reversed and re-computed
+        # based on the new pairing so it stays accurate after swaps.
+        if (
+            getattr(self, "preferred_pairs", None)
+            and hasattr(self.session_of_rounds, "_pair_happiness_per_round")
+            and main_module is not None
+        ):
+            per_round_awards = self.session_of_rounds._pair_happiness_per_round
+            for _player in self.session_of_rounds.players:
+                _old_total = sum(per_round_awards.get(_player.name, []))
+                _player.happiness -= _old_total
+            main_module.apply_preferred_pairs_happiness(
+                self.session_of_rounds, self.preferred_pairs
+            )
 
         # Clear pending changes and swap history
         num_changes = len(self.pending_changes)
