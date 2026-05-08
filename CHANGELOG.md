@@ -1,9 +1,13 @@
 # Changelog
 
 All notable changes to this project are documented in this file.
+### Added
+### Changed
+- names of tabs scripts
+### Removed
+### Bug fixes
 
-
-## [1.3.0] -
+## [1.3.0] - 2026-05-05
 ### Added
 - Mac OS Intel and ARM executable, Unix executable
 ### Changed

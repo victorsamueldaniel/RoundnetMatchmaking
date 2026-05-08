@@ -19,11 +19,10 @@ from ui.functions.tab_functions import (
 from ui.tabs.session_generation_tab import SessionGenerationTabMixin
 from ui.tabs.games_editor_tab import GamesEditorTabMixin
 from ui.tabs.session_games_tab import SessionGamesTabMixin
-from ui.tabs.plots_tab.plots_tab import PlotsTabMixin
+from ui.tabs.plots_tabs.plots_tabs_orchestrator import PlotsTabMixin
 import ui.tabs.session_generation_tab as session_generation_tab
 import ui.tabs.games_editor_tab as games_editor_tab
 import ui.tabs.session_games_tab as session_games_tab
-
 
 main_module = None
 ftf_module = None
@@ -68,6 +67,7 @@ def main():
         session_generation_tab.main_module = main_module
         games_editor_tab.main_module = main_module
         session_games_tab.main_module = main_module
+
     except Exception as e:
         splash.destroy()
         root.deiconify()

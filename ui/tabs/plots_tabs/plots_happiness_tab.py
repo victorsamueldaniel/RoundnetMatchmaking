@@ -2,7 +2,7 @@
 
 import os
 
-from ui.tabs.plots_tab.plots_base_tab import PlotsBaseTabMixin
+from ui.tabs.plots_tabs.plots_base_tab import PlotsBaseTabMixin
 
 
 class HappinessPlotsTabMixin(PlotsBaseTabMixin):

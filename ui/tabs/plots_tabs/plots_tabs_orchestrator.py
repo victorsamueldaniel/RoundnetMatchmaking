@@ -3,10 +3,10 @@
 import os
 
 from ui.functions.tab_functions import plots_find_png_files
-from ui.tabs.plots_tab.plots_happiness_tab import HappinessPlotsTabMixin
-from ui.tabs.plots_tab.plots_spectrum_tab import SpectrumPlotsTabMixin
-from ui.tabs.plots_tab.plots_team_tab import TeamPlotsTabMixin
-from ui.tabs.plots_tab.plots_generic_tab import GenericPlotsTabMixin
+from ui.tabs.plots_tabs.plots_happiness_tab import HappinessPlotsTabMixin
+from ui.tabs.plots_tabs.plots_spectrum_tab import SpectrumPlotsTabMixin
+from ui.tabs.plots_tabs.plots_team_tab import TeamPlotsTabMixin
+from ui.tabs.plots_tabs.plots_generic_tab import GenericPlotsTabMixin
 
 
 class PlotsTabMixin(

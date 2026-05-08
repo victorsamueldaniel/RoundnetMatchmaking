@@ -1531,12 +1531,15 @@ def create_session_games_round_images(
 
 
 if __name__ == "__main__":
+    import core.models
+
     # Example usage
     good_numbers = [1, 3, 4, 5, 7, 9]
     list_of_players = [
-        Player(main_df.loc[name]) for name in main_df.iloc[good_numbers].index
+        core.models.Player(core.models.main_df.loc[name])
+        for name in core.models.main_df.iloc[good_numbers].index
     ]
-    session_of_rounds = SessionOfRounds(
+    session_of_rounds = core.models.SessionOfRounds(
         list_of_players,
         amount_of_rounds=6,
         type_preferences=["balanced"] * 3 + ["level"] * 3,

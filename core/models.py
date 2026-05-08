@@ -1686,24 +1686,30 @@ class GamesRound:
 
 # %%
 if __name__ == "__main__":
-    list_of_players = [Player(main_df.loc[name]) for name in main_df.iloc[10:21].index]
+    import data_loader
+    import core.models
+
+    list_of_players = [
+        core.models.Player(data_loader.main_df.loc[name])
+        for name in data_loader.main_df.iloc[10:21].index
+    ]
     gender_level_medians = {
         "Male": np.median(
             [
-                main_df.loc[name]["Level"]
-                for name in main_df.iloc[10:21].index
-                if main_df.loc[name]["Gender"] == "Male"
+                data_loader.main_df.loc[name]["Level"]
+                for name in data_loader.main_df.iloc[10:21].index
+                if data_loader.main_df.loc[name]["Gender"] == "Male"
             ]
         ),
         "Female": np.median(
             [
-                main_df.loc[name]["Level"]
-                for name in main_df.iloc[10:21].index
-                if main_df.loc[name]["Gender"] == "Female"
+                data_loader.main_df.loc[name]["Level"]
+                for name in data_loader.main_df.iloc[10:21].index
+                if data_loader.main_df.loc[name]["Gender"] == "Female"
             ]
         ),
     }
-    round_of_games = GamesRound(
+    round_of_games = core.models.GamesRound(
         list_of_players,
         type_preference="balanced",
         gender_preference=None,
