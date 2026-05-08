@@ -4,7 +4,7 @@
 - Added a contact page tab.
 - Games Editor now highlights over-benched players live during pending swaps (black background, white text, SAD! label on all matching Not Playing buttons).
 - Preferred pair selection now supports picking 3 or 4 players.
-- Preferred pair algorithm overhauled: now searches the best swap across all possible rounds and pairs globally, instead of greedy per-round search. Happiness weights adjust based on the number of games (e.g. 3 games → `[10, 8, 8]`).
+- Preferred pair algorithm overhauled: now searches the best swap across all possible rounds and pairs globally, instead of greedy per-round search. Happiness weights adjust based on the number of games (e.g. 4 games → `[+12,+10, +8, +8]` of happiness for each match).
 - "Show level on PNG" button moved to Session Games tab and now applies changes dynamically.
 ## Bug fixes
 - Fixed quantile thresholds (now correctly ≤33%, >33% to ≤66%, >66%).
