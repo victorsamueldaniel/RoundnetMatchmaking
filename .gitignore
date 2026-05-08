@@ -28,7 +28,7 @@ ENV/
 env/
 
 # IDE / editor
-.vscode/
+.vscode/settings.json
 .idea/
 
 # Local environment files
