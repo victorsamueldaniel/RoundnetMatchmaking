@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "num_rounds": 4,
+  "games_per_round": "auto",
+  "level_gap_tol": 1.3,
+  "lambda_weight": 2.0,
+  "percentile": 33,
+  "spectrum_enabled": true,
+  "round_type_preferences": [
+    "balanced",
+    "balanced",
+    "level",
+    "level"
+  ],
+  "round_gender_preferences": [
+    "open",
+    "mixed",
+    "mixed",
+    "open"
+  ],
+  "female_boost": 0.1,
+  "preferred_pairs": [],
+  "selected_players": []
+}

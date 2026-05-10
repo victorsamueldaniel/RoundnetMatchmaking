@@ -1,0 +1,16 @@
+{
+    "schema_version": 1,
+    "first_seed": 0,
+    "last_seed": 9,
+    "num_iter": 435,
+    "weight_same_teammate": 5,
+    "never_met_bonus_per_player": 2,
+    "never_met_bonus_cap": 4,
+    "objective": {
+        "name": "mean_min_max_happiness_objective",
+        "hyperparameters": {
+            "lambda": 2.4,
+            "percentile": 33
+        }
+    }
+}

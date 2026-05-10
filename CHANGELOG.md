@@ -1,5 +1,27 @@
 # Changelog
 All notable changes to this project are documented in this file.
+## [1.5.0]
+### Changed
+#### new sorter in level games
+In games by level, there is now a helper function `_level_sorter` that sorts players by rounded level first and unhappiness second, with optional Gaussian noise to add variety across rounds. This helps players near a level boundary sometimes move into a different group.
+Example:
+Example players: A (lvl 3.9, happiness 10), B (lvl 3.4, happiness 9).
+If the noise gives B a level of 3.6, then both players round to 4, so the keys become:
+`_level_sorter(A) = (4, -10)`
+`_level_sorter(B) = (4, -9)`
+
+So B is placed ahead of A in that case. If B instead stays below 3.5, then A sorts ahead because its rounded level is higher.
+
+#### User preferences
+The application now remembers user-configured parameters across sessions using a small set of JSON files stored under `ui/user_preferences/`. On launch, saved values are restored into all UI controls automatically, with no user action required.
+
+Parameters are split into two categories. **Auto-saved** parameters (number of rounds, games per round, level gap tolerance, lambda weight, percentile, spectrum toggle, and per-round type/gender preferences) are written to disk silently on every change via tkinter variable traces. **Opt-in** parameters (selected players, female level shift, and preferred pairs) are only persisted if the user explicitly chooses to save them at close time. When the app is closed and any of these opt-in parameters were modified during the session, a styled dialog appears listing each changed parameter individually with a Save / Discard toggle (defaulting to Discard), so the user can decide per-parameter.
+
+A separate file (`extra_parameters.json`) holds generation algorithm knobs that are not exposed in the UI (seed range, iteration count, teammate-repeat penalty, never-met bonus). These are read once at startup and can be tuned by editing the file directly. See `docs/PREFERENCES_PERSISTENCE.md` for the full parameter reference and instructions for adding new parameters.
+
+### Bug fixes
+- Fixed round type/gender preferences resetting to defaults when clicking `+` or `−` on the number of rounds. The controls now preserve current selections for existing rounds and, for newly added rounds, fall back to the last values stored in the runtime temp file instead of hardcoded defaults.
+
 ## [1.4.0] - 2026-05-08
 ### Added
 - Added a contact page tab.

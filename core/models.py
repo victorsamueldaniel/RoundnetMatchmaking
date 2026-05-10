@@ -1174,7 +1174,7 @@ class GamesRound:
         else:
             return False, gender_counts, "imbalanced"
 
-    def _preallocate_players_for_mixed_games(self, people_playing):
+    def _preallocate_players_for_mixed_games(self, people_playing, seed=None):
         """
         Pre-allocate players into groups to maximize mixed games when gender preference is "mixed".
 
@@ -1188,12 +1188,12 @@ class GamesRound:
 
         male_players = sorted(
             [p for p in people_playing if p.gender == "Male"],
-            key=lambda p: p.level,
+            key=lambda p: self._level_sorter(p, seed=seed),
             reverse=True,
         )
         female_players = sorted(
             [p for p in people_playing if p.gender == "Female"],
-            key=lambda p: p.level,
+            key=lambda p: self._level_sorter(p, seed=seed),
             reverse=True,
         )
 
@@ -1271,6 +1271,19 @@ class GamesRound:
 
         return filtered_pairs
 
+    def _level_sorter(
+        self, player, round_factor=1, sd_of_randomizer="default", seed=None
+    ):
+        rng = random.Random(seed)
+        if sd_of_randomizer == "default":
+            sd_of_randomizer = (
+                self.session_median_level * 0.1
+            )  # 10% of median level as default noise
+        noisy_level = round(player.level * round_factor) / round_factor + rng.gauss(
+            0, sd_of_randomizer
+        )
+        return (noisy_level, -player.happiness)
+
     def create_games_by_level(self, alternate=False, seed=None, **kwargs):
 
         # Initialize iterations list to track all possible team arrangements
@@ -1278,7 +1291,7 @@ class GamesRound:
 
         # Try to pre-allocate groups for mixed games (if applicable)
         preallocated_groups = self._preallocate_players_for_mixed_games(
-            self.people_playing
+            self.people_playing, seed=seed
         )
 
         if preallocated_groups is not None:
@@ -1294,7 +1307,7 @@ class GamesRound:
                         for player in self.people_playing
                         if player.gender == "Male"
                     ],
-                    key=lambda player: (round(player.level * 2) / 2, -player.happiness),
+                    key=lambda player: self._level_sorter(player, seed=seed),
                     reverse=True,
                 )
                 female_players = sorted(
@@ -1303,7 +1316,7 @@ class GamesRound:
                         for player in self.people_playing
                         if player.gender == "Female"
                     ],
-                    key=lambda player: (round(player.level * 2) / 2, -player.happiness),
+                    key=lambda player: self._level_sorter(player, seed=seed),
                     reverse=True,
                 )
 
@@ -1317,7 +1330,7 @@ class GamesRound:
             else:
                 sorted_players = sorted(
                     self.people_playing,
-                    key=lambda p: (round(p.level * 2) / 2, -p.happiness),
+                    key=lambda p: self._level_sorter(p, seed=seed),
                     reverse=True,
                 )
 
@@ -1327,11 +1340,11 @@ class GamesRound:
                 rng = random.Random(seed)
                 i = 0
                 while i < len(sorted_players):
-                    band_level = round(sorted_players[i].level * 2) / 2
+                    band_level = round(sorted_players[i].level)
                     j = i + 1
                     while (
                         j < len(sorted_players)
-                        and round(sorted_players[j].level * 2) / 2 == band_level
+                        and round(sorted_players[j].level) == band_level
                     ):
                         j += 1
                     band = sorted_players[i:j]

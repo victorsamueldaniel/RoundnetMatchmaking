@@ -39,6 +39,237 @@ class PlayerSelectionUI(
     """Composed UI class built from tab mixins."""
 
 
+class _UnsavedPrefsDialog:
+    """Styled modal dialog with per-parameter Save / Discard toggles."""
+
+    _LABELS: dict  # populated from preferences_manager at first use
+
+    def __init__(self, parent, diff_keys, colors):
+        self.colors = colors
+        from ui.functions.preferences_manager import UI_DEFAULT_NOT_SAVED_LABELS
+
+        self._LABELS = UI_DEFAULT_NOT_SAVED_LABELS
+        self.choices = {k: tk.StringVar(value="discard") for k in diff_keys}
+        self._confirmed = False
+
+        dlg = tk.Toplevel(parent)
+        self.dlg = dlg
+        dlg.title("Unsaved settings")
+        dlg.configure(bg=colors["bg_dark"])
+        dlg.resizable(False, False)
+        dlg.transient(parent)
+        dlg.grab_set()
+
+        # ── Title ──────────────────────────────────────────────────────
+        tk.Label(
+            dlg,
+            text="Some settings were not saved",
+            font=("Arial", 14, "bold"),
+            fg=colors["accent_yellow"],
+            bg=colors["bg_dark"],
+        ).pack(pady=(20, 4), padx=28)
+
+        tk.Label(
+            dlg,
+            text="Choose what to do for each setting:",
+            font=("Arial", 11),
+            fg=colors["text_light"],
+            bg=colors["bg_dark"],
+        ).pack(pady=(0, 14), padx=28)
+
+        # ── One row per changed parameter ──────────────────────────────
+        for key in diff_keys:
+            self._add_row(dlg, key, self._LABELS.get(key, key))
+
+        # ── Separator ──────────────────────────────────────────────────
+        tk.Frame(dlg, bg=colors["accent_yellow"], height=1).pack(
+            fill=tk.X, padx=20, pady=(18, 0)
+        )
+
+        # ── Bottom buttons ─────────────────────────────────────────────
+        btn_frame = tk.Frame(dlg, bg=colors["bg_dark"])
+        btn_frame.pack(pady=14)
+
+        tk.Button(
+            btn_frame,
+            text="Confirm",
+            font=("Arial", 11, "bold"),
+            bg=colors["accent_red"],
+            fg=colors["text_light"],
+            activebackground="#5a0100",
+            activeforeground=colors["text_light"],
+            relief=tk.FLAT,
+            padx=18,
+            pady=6,
+            cursor="hand2",
+            command=self._on_confirm,
+        ).pack(side=tk.LEFT, padx=8)
+
+        tk.Button(
+            btn_frame,
+            text="Save all",
+            font=("Arial", 11, "bold"),
+            bg=colors["accent_yellow"],
+            fg=colors["text_dark"],
+            activebackground="#d8b500",
+            activeforeground=colors["text_dark"],
+            relief=tk.FLAT,
+            padx=18,
+            pady=6,
+            cursor="hand2",
+            command=self._on_save_all,
+        ).pack(side=tk.LEFT, padx=8)
+
+        tk.Button(
+            btn_frame,
+            text="Discard all",
+            font=("Arial", 11),
+            bg="#555555",
+            fg=colors["text_light"],
+            activebackground="#444444",
+            activeforeground=colors["text_light"],
+            relief=tk.FLAT,
+            padx=18,
+            pady=6,
+            cursor="hand2",
+            command=self._on_discard_all,
+        ).pack(side=tk.LEFT, padx=8)
+
+        # ── Centre on parent ───────────────────────────────────────────
+        dlg.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() - dlg.winfo_width()) // 2
+        y = parent.winfo_y() + (parent.winfo_height() - dlg.winfo_height()) // 2
+        dlg.geometry(f"+{x}+{y}")
+
+        parent.wait_window(dlg)
+
+    def _add_row(self, parent, key, label_text):
+        c = self.colors
+        row = tk.Frame(parent, bg=c["bg_dark"])
+        row.pack(fill=tk.X, padx=28, pady=5)
+
+        tk.Label(
+            row,
+            text=label_text,
+            font=("Arial", 11),
+            fg=c["text_light"],
+            bg=c["bg_dark"],
+            width=22,
+            anchor=tk.W,
+        ).pack(side=tk.LEFT)
+
+        var = self.choices[key]
+
+        def _refresh(btns, v=var):
+            val = v.get()
+            btns[0].config(
+                bg=c["accent_red"] if val == "save" else "#3a3a3a",
+                relief=tk.SUNKEN if val == "save" else tk.FLAT,
+            )
+            btns[1].config(
+                bg="#666666" if val == "discard" else "#3a3a3a",
+                relief=tk.SUNKEN if val == "discard" else tk.FLAT,
+            )
+
+        btn_save = tk.Button(
+            row,
+            text="Save",
+            font=("Arial", 10, "bold"),
+            bg="#3a3a3a",
+            fg=c["text_light"],
+            activebackground="#5a0100",
+            activeforeground=c["text_light"],
+            relief=tk.FLAT,
+            padx=12,
+            pady=3,
+            cursor="hand2",
+        )
+        btn_discard = tk.Button(
+            row,
+            text="Discard",
+            font=("Arial", 10),
+            bg="#666666",
+            fg=c["text_light"],
+            activebackground="#333333",
+            activeforeground=c["text_light"],
+            relief=tk.SUNKEN,
+            padx=12,
+            pady=3,
+            cursor="hand2",
+        )
+        btns = [btn_save, btn_discard]
+        btn_save.config(command=lambda: (var.set("save"), _refresh(btns)))
+        btn_discard.config(command=lambda: (var.set("discard"), _refresh(btns)))
+
+        btn_save.pack(side=tk.LEFT, padx=(8, 2))
+        btn_discard.pack(side=tk.LEFT, padx=(2, 0))
+
+    def _on_confirm(self):
+        self._confirmed = True
+        self.dlg.destroy()
+
+    def _on_discard_all(self):
+        for var in self.choices.values():
+            var.set("discard")
+        self._confirmed = True
+        self.dlg.destroy()
+
+    def _on_save_all(self):
+        for var in self.choices.values():
+            var.set("save")
+        self._confirmed = True
+        self.dlg.destroy()
+
+    def get_keys_to_save(self):
+        """Return only the keys the user chose to save."""
+        if not self._confirmed:
+            return []
+        return [k for k, v in self.choices.items() if v.get() == "save"]
+
+
+def _on_app_close(root, app):
+    """Show per-parameter save dialog, clean up temp files, then close."""
+    from ui.functions.preferences_manager import (
+        save_ui_not_saved,
+        cleanup_temp_files,
+    )
+
+    try:
+        current = app._collect_ui_all_tracked()
+        # Only show the dialog for keys that the user actually changed this session.
+        from ui.functions.preferences_manager import UI_DEFAULT_NOT_SAVED_KEYS
+
+        initial = getattr(app, "_initial_not_saved", {})
+        diff = {
+            k: current[k]
+            for k in UI_DEFAULT_NOT_SAVED_KEYS
+            if k in current and current[k] != initial.get(k)
+        }
+        if diff:
+            colors = getattr(
+                app,
+                "colors",
+                {
+                    "bg_dark": "#2E2E2E",
+                    "accent_yellow": "#FED403",
+                    "accent_red": "#7F0301",
+                    "text_light": "#FFFFFF",
+                },
+            )
+            dialog = _UnsavedPrefsDialog(root, list(diff.keys()), colors)
+            keys_to_save = dialog.get_keys_to_save()
+            if keys_to_save:
+                save_ui_not_saved({k: diff[k] for k in keys_to_save})
+    except Exception:
+        pass
+    finally:
+        try:
+            cleanup_temp_files()
+        except Exception:
+            pass
+        root.destroy()
+
+
 def main():
     """Main function to run the UI."""
     global main_module, ftf_module
@@ -92,7 +323,8 @@ def main():
         )
         sys.exit(1)
 
-    PlayerSelectionUI(root)
+    app = PlayerSelectionUI(root)
+    root.protocol("WM_DELETE_WINDOW", lambda: _on_app_close(root, app))
 
     splash.destroy()
     root.deiconify()

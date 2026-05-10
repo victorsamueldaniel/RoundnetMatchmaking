@@ -911,6 +911,9 @@ class SessionGenerationTabMixin:
         # Second pass after the window manager has fully settled the maximized layout
         self.root.after(800, self._schedule_player_button_font_fit)
 
+        # Load and apply saved UI preferences, then wire auto-save traces.
+        self._load_and_apply_preferences()
+
         # Contact tab is available on startup and should stay as the last tab.
         if hasattr(self, "show_contact_tab"):
             try:
@@ -1465,6 +1468,36 @@ class SessionGenerationTabMixin:
 
     def create_round_preferences(self):
         """Create or recreate the round preference controls based on num_rounds_var"""
+        # Snapshot current values BEFORE clearing so increase/decrease_rounds preserves them.
+        # One-time overrides from _apply_ui_preferences take priority over the live snapshot.
+        if getattr(self, "_pref_round_types", []):
+            _prev_types = list(self._pref_round_types)
+        else:
+            _prev_types = [v.get() for v in self.type_prefs]
+
+        if getattr(self, "_pref_round_genders", []):
+            _prev_genders = list(self._pref_round_genders)
+        else:
+            _prev_genders = [v.get() for v in self.gender_prefs]
+
+        # For rounds beyond the current count, fall back to the temp file so that
+        # adding a round via "+" picks up whatever was last saved there.
+        _temp_types: list = []
+        _temp_genders: list = []
+        if getattr(self, "_prefs_traces_active", False):
+            try:
+                from ui.functions.preferences_manager import (
+                    _UI_TEMP,
+                    _UI_DEFAULTS,
+                    _read_json,
+                )
+
+                _temp = _read_json(_UI_TEMP, _UI_DEFAULTS)
+                _temp_types = _temp.get("round_type_preferences", [])
+                _temp_genders = _temp.get("round_gender_preferences", [])
+            except Exception:
+                pass
+
         # Clear existing round frames
         for frame in self.round_frames:
             frame.destroy()
@@ -1476,7 +1509,7 @@ class SessionGenerationTabMixin:
 
         num_rounds = self.num_rounds_var.get()
 
-        # Default preferences (cycle through these for any number of rounds)
+        # Hardcoded cycle fallback for when neither snapshot nor temp has a value.
         type_defaults = ["balanced", "balanced", "level", "level"]
         gender_defaults = ["open", "mixed", "mixed", "open"]
 
@@ -1499,7 +1532,13 @@ class SessionGenerationTabMixin:
             round_label.grid(row=0, column=0, padx=5, sticky=tk.W)
 
             # Type preference
-            type_var = tk.StringVar(value=type_defaults[i % len(type_defaults)])
+            if i < len(_prev_types):
+                _type_val = _prev_types[i]
+            elif i < len(_temp_types):
+                _type_val = _temp_types[i]
+            else:
+                _type_val = type_defaults[i % len(type_defaults)]
+            type_var = tk.StringVar(value=_type_val)
             self.type_prefs.append(type_var)
             type_section, type_buttons = self._make_toggle_group(
                 round_frame, "#E8F4F8", "Type:", ["level", "balanced"], type_var
@@ -1508,13 +1547,26 @@ class SessionGenerationTabMixin:
             self.type_buttons_list.append(type_buttons)
 
             # Gender preference
-            gender_var = tk.StringVar(value=gender_defaults[i % len(gender_defaults)])
+            if i < len(_prev_genders):
+                _gender_val = _prev_genders[i]
+            elif i < len(_temp_genders):
+                _gender_val = _temp_genders[i]
+            else:
+                _gender_val = gender_defaults[i % len(gender_defaults)]
+            gender_var = tk.StringVar(value=_gender_val)
             self.gender_prefs.append(gender_var)
             gender_section, gender_buttons = self._make_toggle_group(
                 round_frame, "#F8E8F4", "Gender:", ["open", "mixed"], gender_var
             )
             gender_section.grid(row=0, column=2, padx=10, sticky=tk.W)
             self.gender_buttons_list.append(gender_buttons)
+
+        # Clear one-time overrides now that vars have been built from them.
+        self._pref_round_types = []
+        self._pref_round_genders = []
+        # Re-attach auto-save traces after rebuild if preferences are active.
+        if getattr(self, "_prefs_traces_active", False):
+            self._trace_round_pref_vars()
 
     def toggle_spectrum_switch(self):
         """Toggle Spectrum parameter ON/OFF"""
@@ -1687,7 +1739,12 @@ class SessionGenerationTabMixin:
             # Fallback to raw counts if quantile computation fails
             self.info_text.insert(tk.END, "Could not compute quantiles for levels\n")
 
-        self.info_text.insert(tk.END, f"Avg Level: {selected_df['Level'].mean():.2f}\n")
+        self.info_text.insert(
+            tk.END, f"Median Level: {selected_df['Level'].median():.2f}\n"
+        )
+        self.info_text.insert(
+            tk.END, f"Average Level: {selected_df['Level'].mean():.2f}\n"
+        )
         self.info_text.insert(tk.END, "=" * 40 + "\n\n")
 
         # Display each player AFTER level distribution
@@ -2543,6 +2600,159 @@ class SessionGenerationTabMixin:
         self._update_count_label()
         self.update_info_display()
 
+    # ------------------------------------------------------------------
+    # Preferences persistence
+    # ------------------------------------------------------------------
+
+    def _collect_ui_default_saved(self):
+        """Snapshot current values of every default-saved UI preference field."""
+        try:
+            lambda_w = float(self.lambda_weight_var.get())
+        except Exception:
+            lambda_w = 2.0
+        try:
+            pct = int(self.percentile_var.get())
+        except Exception:
+            pct = 33
+        try:
+            lgt = float(self.level_gap_tol_var.get())
+        except Exception:
+            lgt = 1.1
+        try:
+            nr = int(self.num_rounds_var.get())
+        except Exception:
+            nr = 4
+        return {
+            "num_rounds": nr,
+            "games_per_round": self.games_per_round_var.get(),
+            "level_gap_tol": lgt,
+            "lambda_weight": lambda_w,
+            "percentile": pct,
+            "spectrum_enabled": bool(self.spectrum_var.get()),
+            "round_type_preferences": [v.get() for v in self.type_prefs],
+            "round_gender_preferences": [v.get() for v in self.gender_prefs],
+        }
+
+    def _collect_ui_all_tracked(self):
+        """Snapshot all tracked UI preferences (default-saved + default-not-saved)."""
+        from ui.functions.preferences_manager import serialize_preferred_pairs
+
+        data = self._collect_ui_default_saved()
+        data["selected_players"] = list(self.selected_players)
+        try:
+            data["female_boost"] = float(self.female_boost_var.get())
+        except Exception:
+            data["female_boost"] = 0.0
+        data["preferred_pairs"] = serialize_preferred_pairs(self.preferred_pairs)
+        return data
+
+    def _on_auto_save_change(self, *_args):
+        """Trace callback: silently auto-save default-saved preferences."""
+        try:
+            from ui.functions.preferences_manager import (
+                save_ui_default_saved,
+                update_ui_temp,
+            )
+
+            save_ui_default_saved(self._collect_ui_default_saved())
+            update_ui_temp(self._collect_ui_all_tracked())
+        except Exception:
+            pass
+
+    def _trace_round_pref_vars(self):
+        """Attach auto-save traces to all current round-preference variables."""
+        for var in self.type_prefs + self.gender_prefs:
+            var.trace_add("write", self._on_auto_save_change)
+
+    def _apply_ui_preferences(self, prefs):
+        """Apply a loaded preferences dict to all UI controls."""
+        from ui.functions.preferences_manager import deserialize_preferred_pairs
+
+        # Store round prefs as one-time overrides for create_round_preferences.
+        self._pref_round_types = prefs.get("round_type_preferences", [])
+        self._pref_round_genders = prefs.get("round_gender_preferences", [])
+
+        # Rebuild round rows with the saved count and type/gender values.
+        num_rounds = prefs.get("num_rounds", 4)
+        self.num_rounds_var.set(num_rounds)
+        if hasattr(self, "rounds_label"):
+            self.rounds_label.config(text=str(num_rounds))
+        self.create_round_preferences()
+
+        # Scalar parameters.
+        self.games_per_round_var.set(prefs.get("games_per_round", "auto"))
+        self.level_gap_tol_var.set(prefs.get("level_gap_tol", 1.1))
+        self.lambda_weight_var.set(prefs.get("lambda_weight", 2.0))
+        self.percentile_var.set(prefs.get("percentile", 33))
+        self.set_spectrum_state(prefs.get("spectrum_enabled", True))
+
+        # Default-not-saved: restore only when present in stable (user previously confirmed).
+        if "selected_players" in prefs:
+            for name in list(prefs["selected_players"]):
+                if name in self.player_buttons and not self.player_button_states.get(
+                    name, False
+                ):
+                    self.toggle_player(name)
+
+        if "female_boost" in prefs:
+            try:
+                self.female_boost_var.set(float(prefs["female_boost"]))
+            except (TypeError, ValueError):
+                pass
+
+        if "preferred_pairs" in prefs and prefs["preferred_pairs"]:
+            try:
+                self.preferred_pairs = deserialize_preferred_pairs(
+                    prefs["preferred_pairs"]
+                )
+                self._update_pairs_count_label()
+            except Exception:
+                pass
+
+    def _load_and_apply_preferences(self):
+        """Load stable preferences, apply to controls, then wire auto-save traces."""
+        from ui.functions.preferences_manager import (
+            ensure_preferences_exist,
+            load_ui_preferences,
+            load_extra_preferences,
+            update_ui_temp,
+        )
+
+        ensure_preferences_exist()
+        prefs = load_ui_preferences()
+        self._extra_prefs = load_extra_preferences()
+        self._apply_ui_preferences(prefs)
+
+        # Snapshot the not-saved keys immediately after load so we can detect
+        # changes the user makes THIS session (compare at close vs startup state).
+        from ui.functions.preferences_manager import UI_DEFAULT_NOT_SAVED_KEYS
+
+        _snap_all = self._collect_ui_all_tracked()
+        self._initial_not_saved = {
+            k: _snap_all.get(k) for k in UI_DEFAULT_NOT_SAVED_KEYS
+        }
+
+        # Auto-save traces for scalar default-saved variables.
+        for _var in (
+            self.num_rounds_var,
+            self.games_per_round_var,
+            self.level_gap_tol_var,
+            self.lambda_weight_var,
+            self.percentile_var,
+            self.spectrum_var,
+        ):
+            _var.trace_add("write", self._on_auto_save_change)
+
+        # Mark active so create_round_preferences re-attaches traces on rebuild.
+        self._prefs_traces_active = True
+        self._trace_round_pref_vars()
+
+        # Initialise temp file with current full state.
+        try:
+            update_ui_temp(self._collect_ui_all_tracked())
+        except Exception:
+            pass
+
     def run_session(self):
         """Run session generation with selected players"""
         if len(self.selected_players) < 4:
@@ -2623,9 +2833,14 @@ class SessionGenerationTabMixin:
         else:
             games_per_round = int(games_per_round_setting)
 
-        # Parameters for seed optimization
-        first_seed = 0
-        last_seed = 9
+        # Parameters for seed optimization (from extra_parameters JSON when available)
+        _ep = getattr(self, "_extra_prefs", {})
+        first_seed = _ep.get("first_seed", 0)
+        last_seed = _ep.get("last_seed", 9)
+        num_iter = _ep.get("num_iter", 435)
+        weight_same_teammate = _ep.get("weight_same_teammate", 5)
+        never_met_bonus_per_player = _ep.get("never_met_bonus_per_player", 2)
+        never_met_bonus_cap = _ep.get("never_met_bonus_cap", 4)
 
         # Parameters from UI
         try:
@@ -2663,6 +2878,10 @@ class SessionGenerationTabMixin:
             percentile,
             spectrum_enabled,
             self.preferred_pairs,
+            num_iter=num_iter,
+            weight_same_teammate=weight_same_teammate,
+            never_met_bonus_per_player=never_met_bonus_per_player,
+            never_met_bonus_cap=never_met_bonus_cap,
         )
 
     def run_generation_with_progress(
@@ -2680,6 +2899,10 @@ class SessionGenerationTabMixin:
         percentile,
         spectrum_enabled,
         preferred_pairs=None,
+        num_iter=435,
+        weight_same_teammate=5,
+        never_met_bonus_per_player=2,
+        never_met_bonus_cap=4,
     ):
         """Run session generation with progress updates."""
         try:
@@ -2713,12 +2936,14 @@ class SessionGenerationTabMixin:
                     gender_preferences=gender_preferences,
                     rounds_reordering=rounds_reordering,
                     level_gap_tol=level_gap_tol,
-                    num_iter=435,
+                    num_iter=num_iter,
                     lambda_weight=lambda_weight,
                     objective_function=lambda x: main_module.mean_min_max_happiness_objective(
                         x, lambda_weight=lambda_weight, percentile=percentile
                     ),
-                    weight_same_teammate=5,
+                    weight_same_teammate=weight_same_teammate,
+                    never_met_bonus_per_player=never_met_bonus_per_player,
+                    never_met_bonus_cap=never_met_bonus_cap,
                     first_seed=first_seed,
                     last_seed=last_seed,
                     spectrum=spectrum_enabled,
