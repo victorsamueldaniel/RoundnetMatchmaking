@@ -2841,6 +2841,7 @@ class SessionGenerationTabMixin:
         weight_same_teammate = _ep.get("weight_same_teammate", 5)
         never_met_bonus_per_player = _ep.get("never_met_bonus_per_player", 2)
         never_met_bonus_cap = _ep.get("never_met_bonus_cap", 4)
+        print_progress = _ep.get("print_progress", True)
 
         # Parameters from UI
         try:
@@ -2882,6 +2883,8 @@ class SessionGenerationTabMixin:
             weight_same_teammate=weight_same_teammate,
             never_met_bonus_per_player=never_met_bonus_per_player,
             never_met_bonus_cap=never_met_bonus_cap,
+            extra_parameters=_ep,
+            print_progress=print_progress,
         )
 
     def run_generation_with_progress(
@@ -2903,6 +2906,8 @@ class SessionGenerationTabMixin:
         weight_same_teammate=5,
         never_met_bonus_per_player=2,
         never_met_bonus_cap=4,
+        extra_parameters=None,
+        print_progress=True,
     ):
         """Run session generation with progress updates."""
         try:
@@ -2944,21 +2949,37 @@ class SessionGenerationTabMixin:
                     weight_same_teammate=weight_same_teammate,
                     never_met_bonus_per_player=never_met_bonus_per_player,
                     never_met_bonus_cap=never_met_bonus_cap,
+                    extra_parameters=extra_parameters,
                     first_seed=first_seed,
                     last_seed=last_seed,
                     spectrum=spectrum_enabled,
                     games_per_round_each_round=games_per_round,
-                    print_progress=True,
+                    print_progress=print_progress,
                     progress_callback=progress_dialog.update_progress,
                 )
             )
 
             # Apply preferred-pairs post-processing
             if preferred_pairs:
+                _extra = extra_parameters or {}
+                _post_cfg = _extra.get("post_processing", {})
+                _fpps_cfg = _post_cfg.get("force_preferred_pairs_in_session", {})
+                try:
+                    _forced_games_default = int(
+                        _fpps_cfg.get("forced_games_default", 1)
+                    )
+                except (TypeError, ValueError):
+                    _forced_games_default = 1
+                try:
+                    _score_tolerance = float(_fpps_cfg.get("score_tolerance", 0.10))
+                except (TypeError, ValueError):
+                    _score_tolerance = 0.10
                 main_module.force_preferred_pairs_in_session(
                     session_of_rounds,
                     preferred_pairs,
+                    forced_games=_forced_games_default,
                     lambda_weight=lambda_weight,
+                    score_tolerance=_score_tolerance,
                 )
                 main_module.apply_preferred_pairs_happiness(
                     session_of_rounds,

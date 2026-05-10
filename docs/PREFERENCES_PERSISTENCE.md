@@ -69,6 +69,28 @@ stored on `self._extra_prefs` in `SessionGenerationTabMixin`.
 | `objective.name` | `"mean_min_max_happiness_objective"` | Objective function name |
 | `objective.hyperparameters` | `{"lambda": 2.4, "percentile": 33}` | Objective hyperparameters |
 
+Advanced expert knobs are nested and use script terminology to mirror call sites:
+
+- `game_optimization.games_by_level._level_sorter.sd_of_randomizer` (default `0.1`)
+- `game_optimization.games_by_level._level_sorter.round_factor` (default `1`)
+- `game_optimization.generate_all_game_combinations.max_combos.depth_0` (default `20`)
+- `game_optimization.generate_all_game_combinations.max_combos.depth_n` (default `10`)
+- `game_optimization.generate_all_game_combinations.max_team_combos` (default `3`)
+- `game_optimization.spectrum.Prey.opponents_mean_level_multiplier` (default `0.7`)
+- `game_optimization.spectrum.Challenger.opponents_mean_level_multiplier` (default `0.9`)
+- `game_optimization.spectrum.Challenger.level_gap_tol_multiplier` (default `0.5`)
+- `game_optimization.spectrum.Equilibrist.level_gap_tol_multiplier` (default `0.5`)
+- `game_optimization.spectrum.Classist.level_gap_tol_multiplier` (default `0.5`)
+- `game_optimization.spectrum.Chill.players_chill_threshold` (default `10`)
+- `game_optimization.non_spectrum.high_level_threshold.self_level_multiplier` (default `0.85`)
+- `happiness.penalties.same_people_in_game_history.weight_same_teammate_divisor` (default `2`)
+- `happiness.penalties.gender_preference_not_satisfied.spectrum` (default `5`)
+- `happiness.penalties.gender_preference_not_satisfied.non_spectrum` (default `2`)
+- `happiness.bonuses.minority_gender.mixed` (default `1`)
+- `happiness.bonuses.above_median_level.type_level` (default `1`)
+- `post_processing.force_preferred_pairs_in_session.forced_games_default` (default `1`)
+- `post_processing.force_preferred_pairs_in_session.score_tolerance` (default `0.10`)
+
 ---
 
 ## Lifecycle

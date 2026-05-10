@@ -1,24 +1,46 @@
 {
   "schema_version": 1,
-  "num_rounds": 4,
+  "num_rounds": 6,
   "games_per_round": "auto",
   "level_gap_tol": 1.3,
   "lambda_weight": 2.0,
   "percentile": 33,
   "spectrum_enabled": true,
   "round_type_preferences": [
-    "balanced",
-    "balanced",
+    "level",
+    "level",
+    "level",
+    "level",
     "level",
     "level"
   ],
   "round_gender_preferences": [
     "open",
-    "mixed",
-    "mixed",
+    "open",
+    "open",
+    "open",
+    "open",
     "open"
   ],
   "female_boost": 0.1,
   "preferred_pairs": [],
-  "selected_players": []
+  "selected_players": [
+    "Jérémy",
+    "Flavien",
+    "Félix",
+    "Gabriel",
+    "François",
+    "Federico",
+    "Dominik",
+    "Enzo",
+    "VictorDa",
+    "VictorDi",
+    "Colin",
+    "Sarah",
+    "Linn",
+    "Emile",
+    "Leila",
+    "Leo",
+    "Nathan"
+  ]
 }

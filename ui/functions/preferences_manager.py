@@ -69,6 +69,70 @@ _EXTRA_DEFAULTS: dict = {
             "percentile": 33,
         },
     },
+    "game_optimization": {
+        "games_by_level": {
+            "_level_sorter": {
+                "max_noise_factor": 0.2,
+                "round_factor": 1,
+            }
+        },
+        "generate_all_game_combinations": {
+            "max_combos": {
+                "depth_0": 20,
+                "depth_n": 10,
+            },
+            "max_team_combos": 3,
+        },
+        "spectrum": {
+            "Prey": {
+                "opponents_mean_level_multiplier": 0.7,
+            },
+            "Challenger": {
+                "opponents_mean_level_multiplier": 0.9,
+                "level_gap_tol_multiplier": 0.5,
+            },
+            "Equilibrist": {
+                "level_gap_tol_multiplier": 0.5,
+            },
+            "Classist": {
+                "level_gap_tol_multiplier": 0.5,
+            },
+            "Chill": {
+                "players_chill_threshold": 10,
+            },
+        },
+        "non_spectrum": {
+            "high_level_threshold": {
+                "self_level_multiplier": 0.85,
+            }
+        },
+    },
+    "happiness": {
+        "penalties": {
+            "same_people_in_game_history": {
+                "weight_same_teammate_divisor": 2,
+            },
+            "gender_preference_not_satisfied": {
+                "spectrum": 5,
+                "non_spectrum": 2,
+            },
+        },
+        "bonuses": {
+            "minority_gender": {
+                "mixed": 1,
+            },
+            "above_median_level": {
+                "type_level": 1,
+            },
+        },
+    },
+    "post_processing": {
+        "force_preferred_pairs_in_session": {
+            "forced_games_default": 1,
+            "score_tolerance": 0.10,
+        }
+    },
+    "print_progress": True,
 }
 
 # ---------------------------------------------------------------------------
@@ -115,6 +179,17 @@ def _ensure_dir() -> None:
     os.makedirs(_prefs_dir, exist_ok=True)
 
 
+def _deep_merge(defaults: dict, overrides: dict) -> dict:
+    """Recursively merge overrides into defaults and return merged dict."""
+    merged = dict(defaults)
+    for key, value in overrides.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def _read_json(path: str, defaults: dict) -> dict:
     """Read *path*; return developer defaults merged with file content on success."""
     try:
@@ -122,10 +197,9 @@ def _read_json(path: str, defaults: dict) -> dict:
             data = json.load(fh)
         if not isinstance(data, dict):
             return dict(defaults)
-        # Start from defaults so missing keys are always filled in.
-        merged = dict(defaults)
-        merged.update(data)
-        return merged
+        # Start from defaults so missing keys are always filled in, including
+        # nested expert config trees.
+        return _deep_merge(defaults, data)
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return dict(defaults)
 

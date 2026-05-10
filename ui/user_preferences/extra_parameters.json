@@ -12,5 +12,69 @@
             "lambda": 2.4,
             "percentile": 33
         }
-    }
+    },
+    "game_optimization": {
+        "games_by_level": {
+            "_level_sorter": {
+                "max_noise_factor": 0.2,
+                "round_factor": 1
+            }
+        },
+        "generate_all_game_combinations": {
+            "max_combos": {
+                "depth_0": 20,
+                "depth_n": 10
+            },
+            "max_team_combos": 3
+        },
+        "spectrum": {
+            "Prey": {
+                "opponents_mean_level_multiplier": 0.7
+            },
+            "Challenger": {
+                "opponents_mean_level_multiplier": 0.9,
+                "level_gap_tol_multiplier": 0.5
+            },
+            "Equilibrist": {
+                "level_gap_tol_multiplier": 0.5
+            },
+            "Classist": {
+                "level_gap_tol_multiplier": 0.5
+            },
+            "Chill": {
+                "players_chill_threshold": 10
+            }
+        },
+        "non_spectrum": {
+            "high_level_threshold": {
+                "self_level_multiplier": 0.85
+            }
+        }
+    },
+    "happiness": {
+        "penalties": {
+            "same_people_in_game_history": {
+                "weight_same_teammate_divisor": 2
+            },
+            "gender_preference_not_satisfied": {
+                "spectrum": 5,
+                "non_spectrum": 2
+            }
+        },
+        "bonuses": {
+            "minority_gender": {
+                "mixed": 1
+            },
+            "above_median_level": {
+                "type_level": 1
+            }
+        }
+    },
+    "post_processing": {
+        "force_preferred_pairs_in_session": {
+            "forced_games_default": 1,
+            "score_tolerance": 0.1
+        }
+    },
+    "print_progress": true
 }

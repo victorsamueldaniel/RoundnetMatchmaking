@@ -25,6 +25,16 @@ _SPEC_KEY_TO_ATTR = {
 }
 
 
+def _cfg_get(cfg, path, default):
+    """Return nested config value from dot path; fallback to default."""
+    cur = cfg
+    for key in path.split("."):
+        if not isinstance(cur, dict) or key not in cur:
+            return default
+        cur = cur[key]
+    return cur
+
+
 def mean_happiness_objective(self):
     return np.mean([player.happiness for player in self.participants])
 
@@ -343,6 +353,18 @@ class Player:
         never_met_bonus_per_player=2,
         never_met_bonus_cap=4,
         preferred_pair_bonus=0,
+        spectrum_prey_opponents_mean_level_multiplier=0.7,
+        spectrum_challenger_opponents_mean_level_multiplier=0.9,
+        spectrum_challenger_level_gap_tol_multiplier=0.5,
+        spectrum_equilibrist_level_gap_tol_multiplier=0.5,
+        spectrum_classist_level_gap_tol_multiplier=0.5,
+        spectrum_chill_players_chill_threshold=10,
+        non_spectrum_high_level_threshold_self_level_multiplier=0.85,
+        happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor=2,
+        happiness_penalty_gender_preference_not_satisfied_spectrum=5,
+        happiness_penalty_gender_preference_not_satisfied_non_spectrum=2,
+        happiness_bonus_minority_gender_mixed=1,
+        happiness_bonus_above_median_level_type_level=1,
     ):
         initial_happiness = self.happiness
 
@@ -351,23 +373,37 @@ class Player:
             team_level = np.mean(teammates_levels + [self.level])
             opponents_mean_level = np.mean(opponents_levels)
             spectrum_game = {
-                "Prey": 1 if 0.7 * opponents_mean_level >= self.level else 0,
+                "Prey": (
+                    1
+                    if spectrum_prey_opponents_mean_level_multiplier
+                    * opponents_mean_level
+                    >= self.level
+                    else 0
+                ),
                 "Equilibrist": (
                     1
-                    if abs(team_level - opponents_mean_level) <= 0.5 * level_gap_tol
+                    if abs(team_level - opponents_mean_level)
+                    <= spectrum_equilibrist_level_gap_tol_multiplier * level_gap_tol
                     else 0
                 ),
                 "Challenger": (
                     1
-                    if abs(0.9 * opponents_mean_level - team_level)
-                    <= 0.5 * level_gap_tol
+                    if abs(
+                        spectrum_challenger_opponents_mean_level_multiplier
+                        * opponents_mean_level
+                        - team_level
+                    )
+                    <= spectrum_challenger_level_gap_tol_multiplier * level_gap_tol
                     else 0
                 ),
-                "Chill": 1 if players_chill >= 10 else 0,
+                "Chill": (
+                    1 if players_chill >= spectrum_chill_players_chill_threshold else 0
+                ),
                 "Hunter": 1 if opponents_mean_level <= team_level else 0,
                 "Classist": (
                     1
-                    if abs(self.level - teammates_mean_level) <= 0.5 * level_gap_tol
+                    if abs(self.level - teammates_mean_level)
+                    <= spectrum_classist_level_gap_tol_multiplier * level_gap_tol
                     else 0
                 ),
             }
@@ -392,10 +428,20 @@ class Player:
         else:
             # More nuanced happiness calculation for higher level players
             high_level_teammates = sum(
-                1 for level in teammates_levels if level >= (self.level * 0.85)
+                1
+                for level in teammates_levels
+                if level
+                >= (
+                    self.level * non_spectrum_high_level_threshold_self_level_multiplier
+                )
             )
             high_level_opponents = sum(
-                1 for level in opponents_levels if level >= (self.level * 0.85)
+                1
+                for level in opponents_levels
+                if level
+                >= (
+                    self.level * non_spectrum_high_level_threshold_self_level_multiplier
+                )
             )
 
             # Higher level players are happier with competitive matches
@@ -410,7 +456,17 @@ class Player:
 
         # Penalize for repeated encounters (same opponents/teammates in a game).
         # Using /2 (instead of /3) gives a stronger nudge toward variety.
-        self.happiness -= weight_same_teammate / 2 * amount_same_people_in_game_history
+        try:
+            _same_people_div = float(
+                happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor
+            )
+        except (TypeError, ValueError):
+            _same_people_div = 2.0
+        if _same_people_div == 0:
+            _same_people_div = 1.0
+        self.happiness -= (
+            weight_same_teammate / _same_people_div * amount_same_people_in_game_history
+        )
 
         # Bonus for meeting players never encountered before (teammates or opponents)
         never_met_bonus = min(
@@ -421,12 +477,16 @@ class Player:
 
         # Gender preference satisfaction - penalize if game doesn't satisfy preference
         if not is_gender_preference_satisfied:
-            self.happiness -= 5 if spectrum else 2
+            self.happiness -= (
+                happiness_penalty_gender_preference_not_satisfied_spectrum
+                if spectrum
+                else happiness_penalty_gender_preference_not_satisfied_non_spectrum
+            )
 
         # Add bonus for minority gender in mixed games
         if gender_preference == "mixed" and minority_gender is not None:
             if self.gender == minority_gender:
-                self.happiness += 1
+                self.happiness += happiness_bonus_minority_gender_mixed
 
         # Add bonus for above-median level in level-based games
         if type_preference == "level" and player_level is not None:
@@ -434,11 +494,11 @@ class Player:
             if gender_preference == "mixed" and gender_level_medians:
                 gender_median = gender_level_medians.get(self.gender)
                 if gender_median is not None and player_level > gender_median:
-                    self.happiness += 1
+                    self.happiness += happiness_bonus_above_median_level_type_level
             # Otherwise check against session median
             elif session_median is not None:
                 if player_level > session_median:
-                    self.happiness += 1
+                    self.happiness += happiness_bonus_above_median_level_type_level
 
         self.happiness += preferred_pair_bonus
 
@@ -585,6 +645,18 @@ class GameOfFour:
         never_met_bonus_per_player=2,
         never_met_bonus_cap=4,
         history_cutoff_round_idx=None,
+        spectrum_prey_opponents_mean_level_multiplier=0.7,
+        spectrum_challenger_opponents_mean_level_multiplier=0.9,
+        spectrum_challenger_level_gap_tol_multiplier=0.5,
+        spectrum_equilibrist_level_gap_tol_multiplier=0.5,
+        spectrum_classist_level_gap_tol_multiplier=0.5,
+        spectrum_chill_players_chill_threshold=10,
+        non_spectrum_high_level_threshold_self_level_multiplier=0.85,
+        happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor=2,
+        happiness_penalty_gender_preference_not_satisfied_spectrum=5,
+        happiness_penalty_gender_preference_not_satisfied_non_spectrum=2,
+        happiness_bonus_minority_gender_mixed=1,
+        happiness_bonus_above_median_level_type_level=1,
     ):
         """Update happiness for all players in the game, with penalty for repeated teammates and opponents"""
         for team in [self.team_A, self.team_B]:
@@ -655,6 +727,18 @@ class GameOfFour:
                     never_met_players_in_game_count=never_met_players_in_game_count,
                     never_met_bonus_per_player=never_met_bonus_per_player,
                     never_met_bonus_cap=never_met_bonus_cap,
+                    spectrum_prey_opponents_mean_level_multiplier=spectrum_prey_opponents_mean_level_multiplier,
+                    spectrum_challenger_opponents_mean_level_multiplier=spectrum_challenger_opponents_mean_level_multiplier,
+                    spectrum_challenger_level_gap_tol_multiplier=spectrum_challenger_level_gap_tol_multiplier,
+                    spectrum_equilibrist_level_gap_tol_multiplier=spectrum_equilibrist_level_gap_tol_multiplier,
+                    spectrum_classist_level_gap_tol_multiplier=spectrum_classist_level_gap_tol_multiplier,
+                    spectrum_chill_players_chill_threshold=spectrum_chill_players_chill_threshold,
+                    non_spectrum_high_level_threshold_self_level_multiplier=non_spectrum_high_level_threshold_self_level_multiplier,
+                    happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor=happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor,
+                    happiness_penalty_gender_preference_not_satisfied_spectrum=happiness_penalty_gender_preference_not_satisfied_spectrum,
+                    happiness_penalty_gender_preference_not_satisfied_non_spectrum=happiness_penalty_gender_preference_not_satisfied_non_spectrum,
+                    happiness_bonus_minority_gender_mixed=happiness_bonus_minority_gender_mixed,
+                    happiness_bonus_above_median_level_type_level=happiness_bonus_above_median_level_type_level,
                 )
 
 
@@ -689,6 +773,8 @@ class GamesRound:
         gender_level_medians=None,
         never_met_bonus_per_player=2,
         never_met_bonus_cap=4,
+        game_optimization=None,
+        happiness=None,
     ):
         if seed is not None:
             random.seed(seed)
@@ -722,6 +808,8 @@ class GamesRound:
         self.objective_function = objective_function
         self.never_met_bonus_per_player = never_met_bonus_per_player
         self.never_met_bonus_cap = never_met_bonus_cap
+        self.game_optimization = game_optimization or {}
+        self.happiness_config = happiness or {}
         # Create a set of player pairs that have played together
         self.teammate_history = []
         for round in previous_games_rounds_anti_chron:
@@ -801,6 +889,8 @@ class GamesRound:
 
     def _happiness_update_kwargs(self, seed, level_gap_tol, spectrum):
         """Return the shared keyword arguments for game.update_players_happiness() calls."""
+        game_optimization = getattr(self, "game_optimization", {}) or {}
+        happiness = getattr(self, "happiness_config", {}) or {}
         return dict(
             session_median_level=self.session_median_level,
             level_gap_tol=level_gap_tol,
@@ -812,6 +902,66 @@ class GamesRound:
             gender_level_medians=self.gender_level_medians,
             never_met_bonus_per_player=self.never_met_bonus_per_player,
             never_met_bonus_cap=self.never_met_bonus_cap,
+            spectrum_prey_opponents_mean_level_multiplier=_cfg_get(
+                game_optimization,
+                "spectrum.Prey.opponents_mean_level_multiplier",
+                0.7,
+            ),
+            spectrum_challenger_opponents_mean_level_multiplier=_cfg_get(
+                game_optimization,
+                "spectrum.Challenger.opponents_mean_level_multiplier",
+                0.9,
+            ),
+            spectrum_challenger_level_gap_tol_multiplier=_cfg_get(
+                game_optimization,
+                "spectrum.Challenger.level_gap_tol_multiplier",
+                0.5,
+            ),
+            spectrum_equilibrist_level_gap_tol_multiplier=_cfg_get(
+                game_optimization,
+                "spectrum.Equilibrist.level_gap_tol_multiplier",
+                0.5,
+            ),
+            spectrum_classist_level_gap_tol_multiplier=_cfg_get(
+                game_optimization,
+                "spectrum.Classist.level_gap_tol_multiplier",
+                0.5,
+            ),
+            spectrum_chill_players_chill_threshold=_cfg_get(
+                game_optimization,
+                "spectrum.Chill.players_chill_threshold",
+                10,
+            ),
+            non_spectrum_high_level_threshold_self_level_multiplier=_cfg_get(
+                game_optimization,
+                "non_spectrum.high_level_threshold.self_level_multiplier",
+                0.85,
+            ),
+            happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor=_cfg_get(
+                happiness,
+                "penalties.same_people_in_game_history.weight_same_teammate_divisor",
+                2,
+            ),
+            happiness_penalty_gender_preference_not_satisfied_spectrum=_cfg_get(
+                happiness,
+                "penalties.gender_preference_not_satisfied.spectrum",
+                5,
+            ),
+            happiness_penalty_gender_preference_not_satisfied_non_spectrum=_cfg_get(
+                happiness,
+                "penalties.gender_preference_not_satisfied.non_spectrum",
+                2,
+            ),
+            happiness_bonus_minority_gender_mixed=_cfg_get(
+                happiness,
+                "bonuses.minority_gender.mixed",
+                1,
+            ),
+            happiness_bonus_above_median_level_type_level=_cfg_get(
+                happiness,
+                "bonuses.above_median_level.type_level",
+                1,
+            ),
         )
 
     def create_games(self, seed=None):
@@ -1094,10 +1244,33 @@ class GamesRound:
             game_player_combos = list(combinations(remaining_players, players_per_game))
 
             # Sample combinations if there are too many
+            game_optimization = getattr(self, "game_optimization", {}) or {}
+            try:
+                depth_0_cap = int(
+                    _cfg_get(
+                        game_optimization,
+                        "generate_all_game_combinations.max_combos.depth_0",
+                        20,
+                    )
+                )
+            except (TypeError, ValueError):
+                depth_0_cap = 20
+            try:
+                depth_n_cap = int(
+                    _cfg_get(
+                        game_optimization,
+                        "generate_all_game_combinations.max_combos.depth_n",
+                        10,
+                    )
+                )
+            except (TypeError, ValueError):
+                depth_n_cap = 10
+            depth_0_cap = max(1, depth_0_cap)
+            depth_n_cap = max(1, depth_n_cap)
             if depth == 0:  # First level
-                max_combos = min(len(game_player_combos), 20)
+                max_combos = min(len(game_player_combos), depth_0_cap)
             else:  # Deeper levels
-                max_combos = min(len(game_player_combos), 10)
+                max_combos = min(len(game_player_combos), depth_n_cap)
 
             if len(game_player_combos) > max_combos:
                 random.shuffle(game_player_combos)
@@ -1113,7 +1286,21 @@ class GamesRound:
                 team_combos = list(
                     combinations(range(players_per_game), self.players_per_team)
                 )
-                max_team_combos = min(len(team_combos), 3)
+                try:
+                    _team_combo_cap = int(
+                        _cfg_get(
+                            game_optimization,
+                            "generate_all_game_combinations.max_team_combos",
+                            3,
+                        )
+                    )
+                except (TypeError, ValueError):
+                    _team_combo_cap = 3
+                _team_combo_cap = max(1, _team_combo_cap)
+                max_team_combos = min(
+                    len(team_combos),
+                    _team_combo_cap,
+                )
                 team_combos = team_combos[:max_team_combos]
 
                 for team1_indices in team_combos:
@@ -1272,15 +1459,35 @@ class GamesRound:
         return filtered_pairs
 
     def _level_sorter(
-        self, player, round_factor=1, sd_of_randomizer="default", seed=None
+        self, player, round_factor=1, max_noise_factor="default", seed=None
     ):
+        game_optimization = getattr(self, "game_optimization", {}) or {}
         rng = random.Random(seed)
-        if sd_of_randomizer == "default":
-            sd_of_randomizer = (
-                self.session_median_level * 0.1
-            )  # 10% of median level as default noise
-        noisy_level = round(player.level * round_factor) / round_factor + rng.gauss(
-            0, sd_of_randomizer
+        if round_factor == 1:
+            round_factor = _cfg_get(
+                game_optimization,
+                "games_by_level._level_sorter.round_factor",
+                1,
+            )
+        try:
+            round_factor = float(round_factor)
+        except (TypeError, ValueError):
+            round_factor = 1.0
+        if round_factor == 0:
+            round_factor = 1.0
+        if max_noise_factor == "default":
+            max_noise_factor = _cfg_get(
+                game_optimization,
+                "games_by_level._level_sorter.max_noise_factor",
+                0.2,
+            )
+        try:
+            max_noise_factor = max(0.0, float(max_noise_factor))
+        except (TypeError, ValueError):
+            max_noise_factor = 0.2
+        max_noise = self.session_median_level * max_noise_factor
+        noisy_level = round(player.level * round_factor) / round_factor + rng.uniform(
+            -max_noise, max_noise
         )
         return (noisy_level, -player.happiness)
 
@@ -1333,6 +1540,7 @@ class GamesRound:
                     key=lambda p: self._level_sorter(p, seed=seed),
                     reverse=True,
                 )
+                print(sorted_players)
 
             # Shuffle within each level band so different seeds produce different
             # player groupings, increasing variety across rounds.
@@ -1779,6 +1987,7 @@ class SessionOfRounds:
         weight_same_teammate=5,
         never_met_bonus_per_player=2,
         never_met_bonus_cap=4,
+        extra_parameters=None,
         prioritize_level_rounds=True,
         seed=None,
     ):
@@ -1798,6 +2007,9 @@ class SessionOfRounds:
         self.weight_same_teammate = weight_same_teammate
         self.never_met_bonus_per_player = never_met_bonus_per_player
         self.never_met_bonus_cap = never_met_bonus_cap
+        self.extra_parameters = extra_parameters or {}
+        self.game_optimization = self.extra_parameters.get("game_optimization", {})
+        self.happiness_config = self.extra_parameters.get("happiness", {})
         self.prioritize_level_rounds = prioritize_level_rounds
         self.rounds_reordering = rounds_reordering
 
@@ -2082,6 +2294,8 @@ class SessionOfRounds:
                     gender_level_medians=self.gender_level_medians,
                     never_met_bonus_per_player=self.never_met_bonus_per_player,
                     never_met_bonus_cap=self.never_met_bonus_cap,
+                    game_optimization=self.game_optimization,
+                    happiness=self.happiness_config,
                 )
             )
         # Calculate happiness inequality before each round
