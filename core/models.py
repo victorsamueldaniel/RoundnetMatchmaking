@@ -810,6 +810,7 @@ class GamesRound:
         self.never_met_bonus_cap = never_met_bonus_cap
         self.game_optimization = game_optimization or {}
         self.happiness_config = happiness or {}
+        self._params = self._resolve_params()
         # Create a set of player pairs that have played together
         self.teammate_history = []
         for round in previous_games_rounds_anti_chron:
@@ -887,10 +888,67 @@ class GamesRound:
             }
         return set_of_all_possible_teams
 
+    def _resolve_params(self):
+        """Resolve all config values from game_optimization and happiness_config once."""
+        go = self.game_optimization or {}
+        hc = self.happiness_config or {}
+        return {
+            "spectrum_prey_opponents_mean_level_multiplier": _cfg_get(
+                go, "spectrum.Prey.opponents_mean_level_multiplier", 0.7
+            ),
+            "spectrum_challenger_opponents_mean_level_multiplier": _cfg_get(
+                go, "spectrum.Challenger.opponents_mean_level_multiplier", 0.9
+            ),
+            "spectrum_challenger_level_gap_tol_multiplier": _cfg_get(
+                go, "spectrum.Challenger.level_gap_tol_multiplier", 0.5
+            ),
+            "spectrum_equilibrist_level_gap_tol_multiplier": _cfg_get(
+                go, "spectrum.Equilibrist.level_gap_tol_multiplier", 0.5
+            ),
+            "spectrum_classist_level_gap_tol_multiplier": _cfg_get(
+                go, "spectrum.Classist.level_gap_tol_multiplier", 0.5
+            ),
+            "spectrum_chill_players_chill_threshold": _cfg_get(
+                go, "spectrum.Chill.players_chill_threshold", 10
+            ),
+            "non_spectrum_high_level_threshold_self_level_multiplier": _cfg_get(
+                go, "non_spectrum.high_level_threshold.self_level_multiplier", 0.85
+            ),
+            "happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor": _cfg_get(
+                hc, "penalties.same_people_in_game_history.weight_same_teammate_divisor", 2
+            ),
+            "happiness_penalty_gender_preference_not_satisfied_spectrum": _cfg_get(
+                hc, "penalties.gender_preference_not_satisfied.spectrum", 5
+            ),
+            "happiness_penalty_gender_preference_not_satisfied_non_spectrum": _cfg_get(
+                hc, "penalties.gender_preference_not_satisfied.non_spectrum", 2
+            ),
+            "happiness_bonus_minority_gender_mixed": _cfg_get(
+                hc, "bonuses.minority_gender.mixed", 1
+            ),
+            "happiness_bonus_above_median_level_type_level": _cfg_get(
+                hc, "bonuses.above_median_level.type_level", 1
+            ),
+            "depth_0_cap": max(1, int(_cfg_get(
+                go, "generate_all_game_combinations.max_combos.depth_0", 20
+            ))),
+            "depth_n_cap": max(1, int(_cfg_get(
+                go, "generate_all_game_combinations.max_combos.depth_n", 10
+            ))),
+            "team_combo_cap": max(1, int(_cfg_get(
+                go, "generate_all_game_combinations.max_team_combos", 3
+            ))),
+            "level_sorter_round_factor": _cfg_get(
+                go, "games_by_level._level_sorter.round_factor", 1
+            ),
+            "level_sorter_max_noise_factor": _cfg_get(
+                go, "games_by_level._level_sorter.max_noise_factor", 0.2
+            ),
+        }
+
     def _happiness_update_kwargs(self, seed, level_gap_tol, spectrum):
         """Return the shared keyword arguments for game.update_players_happiness() calls."""
-        game_optimization = getattr(self, "game_optimization", {}) or {}
-        happiness = getattr(self, "happiness_config", {}) or {}
+        p = self._params
         return dict(
             session_median_level=self.session_median_level,
             level_gap_tol=level_gap_tol,
@@ -902,66 +960,18 @@ class GamesRound:
             gender_level_medians=self.gender_level_medians,
             never_met_bonus_per_player=self.never_met_bonus_per_player,
             never_met_bonus_cap=self.never_met_bonus_cap,
-            spectrum_prey_opponents_mean_level_multiplier=_cfg_get(
-                game_optimization,
-                "spectrum.Prey.opponents_mean_level_multiplier",
-                0.7,
-            ),
-            spectrum_challenger_opponents_mean_level_multiplier=_cfg_get(
-                game_optimization,
-                "spectrum.Challenger.opponents_mean_level_multiplier",
-                0.9,
-            ),
-            spectrum_challenger_level_gap_tol_multiplier=_cfg_get(
-                game_optimization,
-                "spectrum.Challenger.level_gap_tol_multiplier",
-                0.5,
-            ),
-            spectrum_equilibrist_level_gap_tol_multiplier=_cfg_get(
-                game_optimization,
-                "spectrum.Equilibrist.level_gap_tol_multiplier",
-                0.5,
-            ),
-            spectrum_classist_level_gap_tol_multiplier=_cfg_get(
-                game_optimization,
-                "spectrum.Classist.level_gap_tol_multiplier",
-                0.5,
-            ),
-            spectrum_chill_players_chill_threshold=_cfg_get(
-                game_optimization,
-                "spectrum.Chill.players_chill_threshold",
-                10,
-            ),
-            non_spectrum_high_level_threshold_self_level_multiplier=_cfg_get(
-                game_optimization,
-                "non_spectrum.high_level_threshold.self_level_multiplier",
-                0.85,
-            ),
-            happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor=_cfg_get(
-                happiness,
-                "penalties.same_people_in_game_history.weight_same_teammate_divisor",
-                2,
-            ),
-            happiness_penalty_gender_preference_not_satisfied_spectrum=_cfg_get(
-                happiness,
-                "penalties.gender_preference_not_satisfied.spectrum",
-                5,
-            ),
-            happiness_penalty_gender_preference_not_satisfied_non_spectrum=_cfg_get(
-                happiness,
-                "penalties.gender_preference_not_satisfied.non_spectrum",
-                2,
-            ),
-            happiness_bonus_minority_gender_mixed=_cfg_get(
-                happiness,
-                "bonuses.minority_gender.mixed",
-                1,
-            ),
-            happiness_bonus_above_median_level_type_level=_cfg_get(
-                happiness,
-                "bonuses.above_median_level.type_level",
-                1,
-            ),
+            spectrum_prey_opponents_mean_level_multiplier=p["spectrum_prey_opponents_mean_level_multiplier"],
+            spectrum_challenger_opponents_mean_level_multiplier=p["spectrum_challenger_opponents_mean_level_multiplier"],
+            spectrum_challenger_level_gap_tol_multiplier=p["spectrum_challenger_level_gap_tol_multiplier"],
+            spectrum_equilibrist_level_gap_tol_multiplier=p["spectrum_equilibrist_level_gap_tol_multiplier"],
+            spectrum_classist_level_gap_tol_multiplier=p["spectrum_classist_level_gap_tol_multiplier"],
+            spectrum_chill_players_chill_threshold=p["spectrum_chill_players_chill_threshold"],
+            non_spectrum_high_level_threshold_self_level_multiplier=p["non_spectrum_high_level_threshold_self_level_multiplier"],
+            happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor=p["happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor"],
+            happiness_penalty_gender_preference_not_satisfied_spectrum=p["happiness_penalty_gender_preference_not_satisfied_spectrum"],
+            happiness_penalty_gender_preference_not_satisfied_non_spectrum=p["happiness_penalty_gender_preference_not_satisfied_non_spectrum"],
+            happiness_bonus_minority_gender_mixed=p["happiness_bonus_minority_gender_mixed"],
+            happiness_bonus_above_median_level_type_level=p["happiness_bonus_above_median_level_type_level"],
         )
 
     def create_games(self, seed=None):
@@ -1030,6 +1040,9 @@ class GamesRound:
         else:
             preference_type = self.type_preference
             kwargs = {}
+        print(
+            f"[create_games] preference_type={preference_type}, seed={seed}, type_preference={self.type_preference}"
+        )
         if preference_type == "balanced":
 
             # Create all games together optimizing global happiness score
@@ -1244,29 +1257,8 @@ class GamesRound:
             game_player_combos = list(combinations(remaining_players, players_per_game))
 
             # Sample combinations if there are too many
-            game_optimization = getattr(self, "game_optimization", {}) or {}
-            try:
-                depth_0_cap = int(
-                    _cfg_get(
-                        game_optimization,
-                        "generate_all_game_combinations.max_combos.depth_0",
-                        20,
-                    )
-                )
-            except (TypeError, ValueError):
-                depth_0_cap = 20
-            try:
-                depth_n_cap = int(
-                    _cfg_get(
-                        game_optimization,
-                        "generate_all_game_combinations.max_combos.depth_n",
-                        10,
-                    )
-                )
-            except (TypeError, ValueError):
-                depth_n_cap = 10
-            depth_0_cap = max(1, depth_0_cap)
-            depth_n_cap = max(1, depth_n_cap)
+            depth_0_cap = self._params["depth_0_cap"]
+            depth_n_cap = self._params["depth_n_cap"]
             if depth == 0:  # First level
                 max_combos = min(len(game_player_combos), depth_0_cap)
             else:  # Deeper levels
@@ -1286,21 +1278,7 @@ class GamesRound:
                 team_combos = list(
                     combinations(range(players_per_game), self.players_per_team)
                 )
-                try:
-                    _team_combo_cap = int(
-                        _cfg_get(
-                            game_optimization,
-                            "generate_all_game_combinations.max_team_combos",
-                            3,
-                        )
-                    )
-                except (TypeError, ValueError):
-                    _team_combo_cap = 3
-                _team_combo_cap = max(1, _team_combo_cap)
-                max_team_combos = min(
-                    len(team_combos),
-                    _team_combo_cap,
-                )
+                max_team_combos = min(len(team_combos), self._params["team_combo_cap"])
                 team_combos = team_combos[:max_team_combos]
 
                 for team1_indices in team_combos:
@@ -1459,36 +1437,28 @@ class GamesRound:
         return filtered_pairs
 
     def _level_sorter(
-        self, player, round_factor=1, max_noise_factor="default", seed=None
+        self, player, round_factor=None, max_noise_factor=None, seed=None
     ):
-        game_optimization = getattr(self, "game_optimization", {}) or {}
         rng = random.Random(seed)
-        if round_factor == 1:
-            round_factor = _cfg_get(
-                game_optimization,
-                "games_by_level._level_sorter.round_factor",
-                1,
-            )
+        if round_factor is None:
+            round_factor = self._params["level_sorter_round_factor"]
         try:
             round_factor = float(round_factor)
         except (TypeError, ValueError):
             round_factor = 1.0
         if round_factor == 0:
             round_factor = 1.0
-        if max_noise_factor == "default":
-            max_noise_factor = _cfg_get(
-                game_optimization,
-                "games_by_level._level_sorter.max_noise_factor",
-                0.2,
-            )
+        if max_noise_factor is None:
+            max_noise_factor = self._params["level_sorter_max_noise_factor"]
         try:
-            max_noise_factor = max(0.0, float(max_noise_factor))
+            max_noise_factor = max(0.0, float(abs(max_noise_factor)))
         except (TypeError, ValueError):
             max_noise_factor = 0.2
         max_noise = self.session_median_level * max_noise_factor
         noisy_level = round(player.level * round_factor) / round_factor + rng.uniform(
             -max_noise, max_noise
         )
+        print(f"player={player.name} level={player.level} noisy_level={noisy_level}")
         return (noisy_level, -player.happiness)
 
     def create_games_by_level(self, alternate=False, seed=None, **kwargs):
@@ -1540,7 +1510,6 @@ class GamesRound:
                     key=lambda p: self._level_sorter(p, seed=seed),
                     reverse=True,
                 )
-                print(sorted_players)
 
             # Shuffle within each level band so different seeds produce different
             # player groupings, increasing variety across rounds.

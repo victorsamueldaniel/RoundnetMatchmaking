@@ -9,6 +9,7 @@ import importlib.util
 import io
 import os
 import sys
+from pathlib import Path
 
 import tkinter as tk
 from tkinter import ttk
@@ -16,15 +17,51 @@ from tkinter import ttk
 # ---------------------------------------------------------------------------
 # Application base directory (works for plain script, PyInstaller exe, REPL)
 # ---------------------------------------------------------------------------
-if getattr(sys, "frozen", False):
-    current_dir = os.path.dirname(sys.executable)
-elif "__file__" in globals():
-    # ui_helpers.py lives in ui/functions/; project root is two levels up
-    current_dir = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _is_project_root(candidate):
+    candidate_path = Path(candidate)
+    return (
+        candidate_path.is_dir()
+        and (candidate_path / "pyproject.toml").is_file()
+        and (candidate_path / "core" / "main.py").is_file()
+        and (candidate_path / "core" / "models.py").is_file()
     )
-else:
-    current_dir = os.getcwd()
+
+
+def _resolve_current_dir(
+    *,
+    is_frozen=None,
+    executable=None,
+    file_path=None,
+    cwd=None,
+    env=None,
+):
+    env = os.environ if env is None else env
+    is_frozen = getattr(sys, "frozen", False) if is_frozen is None else is_frozen
+    executable = sys.executable if executable is None else executable
+    file_path = globals().get("__file__") if file_path is None else file_path
+    cwd = os.getcwd() if cwd is None else cwd
+
+    override = env.get("ROUNDNET_MATCHMAKING_SOURCE_ROOT")
+    if override and _is_project_root(override):
+        return str(Path(override).resolve()), "env_override"
+
+    if is_frozen:
+        executable_dir = Path(executable).resolve().parent
+        for candidate in executable_dir.parents:
+            if _is_project_root(candidate):
+                return str(candidate), "workspace_source"
+        return str(executable_dir), "frozen_bundle"
+
+    if file_path:
+        # ui_helpers.py lives in ui/functions/; project root is two levels up
+        return str(Path(file_path).resolve().parents[2]), "source_tree"
+
+    return str(Path(cwd).resolve()), "cwd"
+
+
+current_dir, current_dir_source = _resolve_current_dir()
 
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
@@ -53,6 +90,8 @@ def load_module(module_name, file_name, force_reload=False):
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot load module from {module_path}")
+
+    print(f"[module-load] {module_name} -> {module_path}")
 
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module

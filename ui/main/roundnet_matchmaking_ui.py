@@ -7,7 +7,7 @@ import os
 import tkinter as tk
 from tkinter import messagebox
 
-from ui.functions.ui_helpers import current_dir, load_module
+from ui.functions.ui_helpers import current_dir, current_dir_source, load_module
 from ui.functions.setup_wizard import (
     _XLSX_CONFIG_PATH,
     _run_setup_wizard,
@@ -275,6 +275,7 @@ def main():
     global main_module, ftf_module
 
     _ensure_windows_tcl_env()
+    print(f"[startup] runtime root ({current_dir_source}): {current_dir}")
     root = tk.Tk()
     root.withdraw()
 
@@ -295,6 +296,14 @@ def main():
         ftf_module = load_module(
             "fine_tuning_functions", "core/fine_tuning_functions.py"
         )
+        print(
+            f"[startup] main module file: {getattr(main_module, '__file__', 'unknown')}"
+        )
+        core_models_module = sys.modules.get("core.models")
+        if core_models_module is not None:
+            print(
+                f"[startup] core.models file: {getattr(core_models_module, '__file__', 'unknown')}"
+            )
 
         # Share runtime-loaded core main module with tab mixins.
         session_generation_tab.main_module = main_module

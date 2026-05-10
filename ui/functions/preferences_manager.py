@@ -72,7 +72,7 @@ _EXTRA_DEFAULTS: dict = {
     "game_optimization": {
         "games_by_level": {
             "_level_sorter": {
-                "max_noise_factor": 0.2,
+                "max_noise_factor": 0.1,
                 "round_factor": 1,
             }
         },
