@@ -1,4 +1,10 @@
 
+# Version 1.6.0 — May 14, 2026
+## What's new?
+- **Load an old session** — a new 📂 Load Session button on the main screen lets you pick any `.pkl` file from a past session. The Games Editor, Session Games view, and plots all open exactly as they would after generating a new session.
+- **No more overwriting on Apply** — each time you apply changes in the Games Editor, a new numbered snapshot is saved (`_v1`, `_v2`, …) instead of overwriting a single file. The original generated session is always preserved.
+- **Restore previous state from score history** — the score history strip in the Games Editor now shows clickable chips for every past state. Click an earlier chip to jump back to that version of the session.
+
 # Version 1.5.0 — May 10, 2026
 ## What's new?
 - In level-based games, players near a level boundary will occasionally be sorted into a different group, adding more variety across rounds.

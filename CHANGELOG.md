@@ -1,5 +1,19 @@
 # Changelog
 All notable changes to this project are documented in this file.
+## [1.6.0] - 2026-05-14
+### Added
+- **Load Existing Session** button (📂) in the Session Generation tab. Opens a file dialog starting in `sessions/`, lets the user pick any `.pkl` snapshot (original or versioned), and opens the same Games Editor / Session Games / Plots tabs that appear after generating a session.
+- **Versioned pickle snapshots**: each time Apply Changes is clicked in the Games Editor, a new numbered snapshot is saved alongside the original (e.g. `session_of_rounds_DD_MM_YYYY_v1.pkl`, `_v2.pkl`, …). The original file is never overwritten.
+- **Score chip restore**: every entry in the Games Editor score history strip (except the current one) is now a clickable button. Clicking a chip loads the corresponding versioned snapshot and rebuilds the editor at that state, truncating future entries.
+- `_restore_session_version(pkl_path)` method on `GamesEditorTabMixin` — loads a pkl, stamps missing objective metadata, preserves truncated score history across the editor rebuild.
+- `_load_existing_session()` method on `SessionGenerationTabMixin` — handles the full load flow: file dialog, deserialization, metadata stamping, PNG/plots regeneration, and tab display.
+
+### Changed
+- **Active session folder tracking**: `_active_session_folder` attribute (initialised to `None` in `__init__`) is now set explicitly after each successful save, replacing the fragile `max(folders_with_plots, key=os.path.getmtime)` scan in both the Games Editor apply-changes block and the session-generation fallback path.
+- `core/pickle_helper.load_session()`: replaced `import main` (script-context legacy) with `import core.main as _main` so the function works correctly inside the UI runtime.
+- Score history entries are now `(score: float, pkl_path: str | None)` tuples instead of bare floats. `_render_score_history` handles both formats for backward compatibility.
+- Current score chip is visually distinguished (SUNKEN relief, 3 px border, ► prefix) to make the active state clear at a glance.
+- swapped save all and confirm choices buttons on app quit
 ## [1.5.0]
 ### Changed
 #### new sorter in level games

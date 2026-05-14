@@ -92,7 +92,7 @@ class _UnsavedPrefsDialog:
 
         tk.Button(
             btn_frame,
-            text="Confirm",
+            text="Save all",
             font=("Arial", 11, "bold"),
             bg=colors["accent_red"],
             fg=colors["text_light"],
@@ -102,12 +102,12 @@ class _UnsavedPrefsDialog:
             padx=18,
             pady=6,
             cursor="hand2",
-            command=self._on_confirm,
+            command=self._on_save_all,
         ).pack(side=tk.LEFT, padx=8)
 
         tk.Button(
             btn_frame,
-            text="Save all",
+            text="Confirm",
             font=("Arial", 11, "bold"),
             bg=colors["accent_yellow"],
             fg=colors["text_dark"],
@@ -117,7 +117,7 @@ class _UnsavedPrefsDialog:
             padx=18,
             pady=6,
             cursor="hand2",
-            command=self._on_save_all,
+            command=self._on_confirm,
         ).pack(side=tk.LEFT, padx=8)
 
         tk.Button(

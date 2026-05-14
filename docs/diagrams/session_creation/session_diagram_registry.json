@@ -276,6 +276,26 @@
         "show_levels"
       ],
       "notes": "Renders a round-by-round session overview image for UI display."
+    },
+    {
+      "id": "ui.load_existing_session",
+      "label": "SessionGenerationTabMixin._load_existing_session",
+      "layer": "ui",
+      "file": "ui/tabs/session_generation_tab.py",
+      "line": 0,
+      "parameters": [],
+      "notes": "Opens a file dialog in sessions/, deserializes the chosen pkl, stamps missing objective metadata, sets _active_session_folder, then opens the Games Editor / Session Games / Plots tabs."
+    },
+    {
+      "id": "ui.restore_session_version",
+      "label": "GamesEditorTabMixin._restore_session_version",
+      "layer": "ui",
+      "file": "ui/tabs/games_editor_tab.py",
+      "line": 0,
+      "parameters": [
+        "pkl_path"
+      ],
+      "notes": "Loads a versioned pkl snapshot, updates session_of_rounds, truncates score history to the chosen point via _pending_restore_history, then rebuilds the Games Editor."
     }
   ],
   "edges": [
@@ -358,6 +378,16 @@
       "from": "ui.run_generation_with_progress",
       "to": "output.create_session_png",
       "label": "UI preview"
+    },
+    {
+      "from": "ui.load_existing_session",
+      "to": "output.save_pickle",
+      "label": "loads pkl via load_session"
+    },
+    {
+      "from": "ui.restore_session_version",
+      "to": "output.save_pickle",
+      "label": "loads versioned pkl via load_session"
     }
   ],
   "entities": [
@@ -744,7 +774,13 @@
       "name": "Session pickle",
       "path_pattern": "sessions/DD_MM_YYYY[_N]/session_of_rounds_DD_MM_YYYY.pkl",
       "generated_by": "save_session",
-      "notes": "Serialized SessionOfRounds snapshot."
+      "notes": "Serialized SessionOfRounds snapshot. Never overwritten after generation."
+    },
+    {
+      "name": "Versioned pickle snapshot",
+      "path_pattern": "sessions/DD_MM_YYYY[_N]/session_of_rounds_DD_MM_YYYY_vN.pkl",
+      "generated_by": "GamesEditorTabMixin.apply_changes",
+      "notes": "Numbered snapshot created on each Apply Changes (v1, v2, …). Original pkl is preserved."
     },
     {
       "name": "Session workbook",

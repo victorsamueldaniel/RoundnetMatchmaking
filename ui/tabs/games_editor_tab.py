@@ -339,7 +339,29 @@ class GamesEditorTabMixin:
         _initial_score = _compute_session_score(
             self.session_of_rounds.players, _sess_obj_name, _sess_lw, _sess_pct
         )
-        self.score_history = [_initial_score]
+        # Find the baseline pkl path so score chips can link back to the saved file
+        _initial_pkl = getattr(self, "_loaded_pkl_path", None)
+        if hasattr(self, "_loaded_pkl_path"):
+            del self._loaded_pkl_path
+        if _initial_pkl is None:
+            _sf_init = getattr(self, "_active_session_folder", None)
+            if _sf_init and os.path.exists(_sf_init):
+                import re as _re_init  # noqa: PLC0415
+
+                _base_pkls = sorted(
+                    f
+                    for f in os.listdir(_sf_init)
+                    if f.endswith(".pkl")
+                    and not _re_init.search(r"_v\d+\.pkl$", f)
+                    and "_modified" not in f
+                )
+                if _base_pkls:
+                    _initial_pkl = os.path.join(_sf_init, _base_pkls[0])
+        self.score_history = [(_initial_score, _initial_pkl)]
+        # Restore previous history if a version-restore operation is in progress
+        if hasattr(self, "_pending_restore_history"):
+            self.score_history = self._pending_restore_history
+            del self._pending_restore_history
         # Store objective metadata for post-apply reuse; do NOT use live slider values
         # so the score stays tied to the generated session regardless of UI changes.
         self._score_obj_name = _sess_obj_name
@@ -1285,26 +1307,28 @@ class GamesEditorTabMixin:
             diff_label.config(text=diff_text, fg=diff_color)
 
     def _render_score_history(self):
-        """Redraw the score history strip inside score_history_container."""
+        """Redraw the score history strip; each chip (except current) is clickable to restore that version."""
         if not hasattr(self, "score_history_container"):
             return
         for w in self.score_history_container.winfo_children():
             w.destroy()
 
-        YELLOW = self.colors["accent_yellow"]
         GREEN = "#4CAF50"
         RED = "#E53935"
         GRAY = "#BBBBBB"
-        BG = self.colors["bg_dark"]
 
-        for i, score in enumerate(self.score_history):
+        last_idx = len(self.score_history) - 1
+        for i, entry in enumerate(self.score_history):
+            score, pkl_path = entry if isinstance(entry, tuple) else (entry, None)
+
             # Determine colour relative to previous entry
             if i == 0:
                 label_text = "Initial"
                 box_color = GRAY
                 arrow = ""
             else:
-                prev = self.score_history[i - 1]
+                prev_entry = self.score_history[i - 1]
+                prev = prev_entry[0] if isinstance(prev_entry, tuple) else prev_entry
                 delta = score - prev
                 if delta > 0.009:
                     box_color = GREEN
@@ -1317,14 +1341,19 @@ class GamesEditorTabMixin:
                     arrow = "  ≈ 0"
                 label_text = f"Swap {i}"
 
+            is_current = i == last_idx
             cell = tk.Frame(
-                self.score_history_container, bg=box_color, relief=tk.RIDGE, bd=1
+                self.score_history_container,
+                bg=box_color,
+                relief=tk.SUNKEN if is_current else tk.RIDGE,
+                bd=3 if is_current else 1,
             )
             cell.pack(side=tk.LEFT, padx=3, pady=2)
 
-            tk.Label(
+            display_label = f"► {label_text}" if is_current else label_text
+            lbl_top = tk.Label(
                 cell,
-                text=label_text,
+                text=display_label,
                 font=(
                     self.fonts["small"][0],
                     max(7, self.fonts["small"][1] - 1),
@@ -1334,8 +1363,9 @@ class GamesEditorTabMixin:
                 bg=box_color,
                 padx=6,
                 pady=1,
-            ).pack()
-            tk.Label(
+            )
+            lbl_top.pack()
+            lbl_score = tk.Label(
                 cell,
                 text=f"{score:.3f}",
                 font=(self.fonts["small"][0], self.fonts["small"][1], "bold"),
@@ -1343,10 +1373,12 @@ class GamesEditorTabMixin:
                 bg=box_color,
                 padx=6,
                 pady=1,
-            ).pack()
+            )
+            lbl_score.pack()
 
+            lbl_arrow = None
             if arrow:
-                tk.Label(
+                lbl_arrow = tk.Label(
                     cell,
                     text=arrow,
                     font=(self.fonts["small"][0], max(7, self.fonts["small"][1] - 1)),
@@ -1354,7 +1386,61 @@ class GamesEditorTabMixin:
                     bg=box_color,
                     padx=4,
                     pady=1,
-                ).pack()
+                )
+                lbl_arrow.pack()
+
+            # Make non-current chips clickable to restore that session version
+            if not is_current and pkl_path:
+                _handler = lambda e, p=pkl_path: self._restore_session_version(p)
+                targets = (cell, lbl_top, lbl_score) + (
+                    (lbl_arrow,) if lbl_arrow else ()
+                )
+                for widget in targets:
+                    widget.config(cursor="hand2")
+                    widget.bind("<Button-1>", _handler)
+
+    def _restore_session_version(self, pkl_path):
+        """Restore the editor to a previously saved session version."""
+        if not pkl_path or not os.path.exists(pkl_path):
+            messagebox.showerror(
+                "Restore failed", f"Snapshot file not found:\n{pkl_path}"
+            )
+            return
+
+        from core.pickle_helper import load_session  # noqa: PLC0415
+
+        try:
+            session = load_session(pkl_path)
+
+            # Stamp objective metadata if absent (legacy pkls)
+            if not getattr(session, "_objective_function_name", None):
+                session._objective_function_name = "mean_min_max_happiness_objective"
+            if getattr(session, "_objective_lambda_weight", None) is None:
+                session._objective_lambda_weight = 2.4
+            if getattr(session, "_objective_percentile", None) is None:
+                session._objective_percentile = 10
+
+            self.session_of_rounds = session
+
+            # Truncate history to this restore point and preserve it across editor rebuild
+            for idx, entry in enumerate(self.score_history):
+                _, path = entry if isinstance(entry, tuple) else (entry, None)
+                if path == pkl_path:
+                    self._pending_restore_history = self.score_history[: idx + 1]
+                    break
+
+            # Rebuild editor with restored session state
+            self.show_games_editor()
+            print(f"\nSession restored from: {os.path.basename(pkl_path)}")
+
+        except Exception as e:
+            import traceback  # noqa: PLC0415
+
+            print(f"Error restoring session version: {e}")
+            traceback.print_exc()
+            messagebox.showerror(
+                "Restore failed", f"Could not restore session:\n\n{str(e)}"
+            )
 
     def update_changes_display(self):
         """Update the visual display of pending changes"""
@@ -1577,6 +1663,26 @@ class GamesEditorTabMixin:
         print(f"New Std Happiness: {self.session_of_rounds.std_happiness:.2f}")
         print("=" * 80)
 
+        # Pre-compute the versioned pkl path for this apply operation so score history
+        # can link each chip to the snapshot written during the same apply.
+        _versioned_pkl_for_hist = None
+        _sf_for_hist = getattr(self, "_active_session_folder", None)
+        if _sf_for_hist and os.path.exists(_sf_for_hist):
+            import re as _re_hist  # noqa: PLC0415
+
+            _fn_for_hist = os.path.basename(_sf_for_hist)
+            _dp_for_hist = "_".join(_fn_for_hist.split("_")[:3])
+            _existing_v_for_hist = [
+                f
+                for f in os.listdir(_sf_for_hist)
+                if f.endswith(".pkl") and _re_hist.search(r"_v\d+\.pkl$", f)
+            ]
+            _nv_for_hist = len(_existing_v_for_hist) + 1
+            _versioned_pkl_for_hist = os.path.join(
+                _sf_for_hist,
+                f"session_of_rounds_{_dp_for_hist}_v{_nv_for_hist}.pkl",
+            )
+
         # Append new score to history and refresh the strip
         try:
             from core.models import (
@@ -1590,114 +1696,108 @@ class GamesEditorTabMixin:
                 getattr(self, "_score_pct", 10),
             )
             if hasattr(self, "score_history"):
-                self.score_history.append(_new_score)
+                self.score_history.append((_new_score, _versioned_pkl_for_hist))
             self._render_score_history()
         except Exception:
             pass
 
         # Regenerate plots, update XLS and PKL files if they exist
         try:
-            sessions_dir = "sessions"
-            if os.path.exists(sessions_dir):
-                session_folders = [
-                    os.path.join(sessions_dir, d)
-                    for d in os.listdir(sessions_dir)
-                    if os.path.isdir(os.path.join(sessions_dir, d))
-                ]
-                folders_with_plots = [
-                    f
-                    for f in session_folders
-                    if os.path.exists(os.path.join(f, "plots"))
-                ]
-                if folders_with_plots:
-                    most_recent = max(folders_with_plots, key=os.path.getmtime)
-                    plots_dir = os.path.join(most_recent, "plots")
-                    session_folder = most_recent
+            session_folder = getattr(self, "_active_session_folder", None)
+            if session_folder and os.path.exists(session_folder):
+                plots_dir = os.path.join(session_folder, "plots")
+                os.makedirs(plots_dir, exist_ok=True)
 
-                    print("\nRegenerating plots with updated data...")
-                    # Add a clear blank line before heavy chart work
-                    print()
-                    main_module.create_all_session_charts(
-                        self.session_of_rounds, save_png=True, png_dir=plots_dir
+                print("\nRegenerating plots with updated data...")
+                # Add a clear blank line before heavy chart work
+                print()
+                main_module.create_all_session_charts(
+                    self.session_of_rounds, save_png=True, png_dir=plots_dir
+                )
+
+                # Small pause in console output for readability
+                print()
+                # Refresh plot tabs
+                self.show_plots_window(plots_dir)
+                print("\nPlots regenerated successfully!\n")
+
+                # Regenerate and refresh the Session Games PNG
+                try:
+                    from core.charts import (  # noqa: PLC0415
+                        create_session_games_png,
+                        create_session_games_round_images,
                     )
 
-                    # Small pause in console output for readability
-                    print()
-                    # Refresh plot tabs
-                    self.show_plots_window(plots_dir)
-                    print("\nPlots regenerated successfully!\n")
+                    session_games_png = os.path.join(
+                        session_folder, "session_games.png"
+                    )
+                    create_session_games_png(
+                        self.session_of_rounds,
+                        session_games_png,
+                        show_levels=self.png_show_levels_var.get(),
+                    )
+                    _round_imgs = create_session_games_round_images(
+                        self.session_of_rounds,
+                        show_levels=self.png_show_levels_var.get(),
+                    )
+                    self.show_session_games_tab(
+                        session_games_png, round_images=_round_imgs
+                    )
+                    print("Session Games PNG updated successfully!\n")
+                except Exception as png_error:
+                    print(
+                        f"Warning: Could not update Session Games PNG: {png_error}"
+                    )
 
-                    # Regenerate and refresh the Session Games PNG
-                    try:
-                        from core.charts import (  # noqa: PLC0415
-                            create_session_games_png,
-                            create_session_games_round_images,
-                        )
-
-                        session_games_png = os.path.join(
-                            most_recent, "session_games.png"
-                        )
-                        create_session_games_png(
-                            self.session_of_rounds,
-                            session_games_png,
-                            show_levels=self.png_show_levels_var.get(),
-                        )
-                        _round_imgs = create_session_games_round_images(
-                            self.session_of_rounds,
-                            show_levels=self.png_show_levels_var.get(),
-                        )
-                        self.show_session_games_tab(
-                            session_games_png, round_images=_round_imgs
-                        )
-                        print("Session Games PNG updated successfully!\n")
-                    except Exception as png_error:
-                        print(
-                            f"Warning: Could not update Session Games PNG: {png_error}"
-                        )
-
-                    # Update Excel file with new game data
-                    print("\nUpdating Excel file with new data...\n")
-                    try:
-                        # Find the existing xlsx file in the session folder
-                        xlsx_files = [
-                            f
-                            for f in os.listdir(session_folder)
-                            if f.endswith(".xlsx") and not f.endswith("_read_only.xlsx")
-                        ]
-                        if xlsx_files:
-                            xlsx_filename = xlsx_files[0]  # Use the first found
-                        else:
-                            # Fallback: use default naming if none found
-                            folder_name = os.path.basename(session_folder)
-                            date_str = folder_name.split("_")[0:3]
-                            date_str = "_".join(date_str)
-                            xlsx_filename = f"session_{date_str}.xlsx"
-
-                        self.session_of_rounds.export_to_excel(
-                            directory=session_folder, filename=xlsx_filename
-                        )
-                        print(f"Excel file updated successfully as {xlsx_filename}!")
-                    except Exception as excel_error:
-                        print(f"Warning: Could not update Excel file: {excel_error}")
-
-                    # Update pickle file with new session data
-                    print("\nUpdating pickle file with new data...\n")
-                    try:
-                        from core.pickle_helper import save_session
-
-                        # Extract only the date part (e.g., 18_11_2025) from folder name
+                # Update Excel file with new game data
+                print("\nUpdating Excel file with new data...\n")
+                try:
+                    # Find the existing xlsx file in the session folder
+                    xlsx_files = [
+                        f
+                        for f in os.listdir(session_folder)
+                        if f.endswith(".xlsx") and not f.endswith("_read_only.xlsx")
+                    ]
+                    if xlsx_files:
+                        xlsx_filename = xlsx_files[0]  # Use the first found
+                    else:
+                        # Fallback: use default naming if none found
                         folder_name = os.path.basename(session_folder)
-                        date_str = folder_name.split("_")[0:3]
-                        date_str = "_".join(date_str)  # Only day_month_year
+                        date_str = "_".join(folder_name.split("_")[:3])
+                        xlsx_filename = f"session_{date_str}.xlsx"
 
-                        save_session(
-                            self.session_of_rounds,
-                            folder=session_folder,
-                            filename=f"session_of_rounds_{date_str}_modified.pkl",
-                        )
-                        print("Pickle file updated successfully!")
-                    except Exception as pickle_error:
-                        print(f"Warning: Could not update pickle file: {pickle_error}")
+                    self.session_of_rounds.export_to_excel(
+                        directory=session_folder, filename=xlsx_filename
+                    )
+                    print(f"Excel file updated successfully as {xlsx_filename}!")
+                except Exception as excel_error:
+                    print(f"Warning: Could not update Excel file: {excel_error}")
+
+                # Save versioned pickle snapshot
+                print("\nSaving versioned pickle snapshot...\n")
+                try:
+                    import re as _re_pkl  # noqa: PLC0415
+                    from core.pickle_helper import save_session  # noqa: PLC0415
+
+                    folder_name = os.path.basename(session_folder)
+                    date_str = "_".join(folder_name.split("_")[:3])
+                    existing_versions = [
+                        f
+                        for f in os.listdir(session_folder)
+                        if f.endswith(".pkl") and _re_pkl.search(r"_v\d+\.pkl$", f)
+                    ]
+                    next_version = len(existing_versions) + 1
+                    versioned_filename = (
+                        f"session_of_rounds_{date_str}_v{next_version}.pkl"
+                    )
+                    save_session(
+                        self.session_of_rounds,
+                        folder=session_folder,
+                        filename=versioned_filename,
+                    )
+                    print(f"Versioned pickle saved as: {versioned_filename}")
+                except Exception as pickle_error:
+                    print(f"Warning: Could not save versioned pickle: {pickle_error}")
         except Exception as e:
             print(f"Warning: Could not regenerate plots: {e}")
 
@@ -1718,7 +1818,7 @@ class GamesEditorTabMixin:
             "Session files updated:\n"
             "• Plots regenerated\n"
             "• Excel file updated\n"
-            "• Pickle file updated",
+            "• Versioned pickle snapshot saved",
         )
 
         # Re-enable the apply button

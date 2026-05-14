@@ -72,6 +72,9 @@ class SessionGenerationTabMixin:
         self.selected_players = []
         self.player_overrides = {}
         self.preferred_pairs = []  # list of (frozenset({name1, name2}), forced_games)
+        self._active_session_folder = (
+            None  # path to the currently active session folder
+        )
         self.png_show_levels_var = tk.BooleanVar(value=False)
         self._tooltip_window = None
         self._tooltip_after_id = None
@@ -157,7 +160,7 @@ class SessionGenerationTabMixin:
         button_frame = tk.Frame(session_tab, bg=self.colors["bg_dark"])
         button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=15, padx=20)
         button_frame.grid_columnconfigure(0, weight=1)
-        button_frame.grid_columnconfigure(5, weight=1)
+        button_frame.grid_columnconfigure(6, weight=1)
 
         # Custom button style
         btn_config = {
@@ -219,6 +222,21 @@ class SessionGenerationTabMixin:
             pady=12,
         )
         self.run_btn.grid(row=0, column=4, padx=10)
+
+        # Load existing session button
+        self.load_session_btn = tk.Button(
+            button_frame,
+            text="\U0001f4c2 Load Session",
+            command=self._load_existing_session,
+            bg="#555555",
+            fg=self.colors["text_light"],
+            font=self.fonts["normal_bold"],
+            relief=tk.FLAT,
+            cursor="hand2",
+            padx=20,
+            pady=12,
+        )
+        self.load_session_btn.grid(row=0, column=5, padx=10)
 
         # Create vertical PanedWindow to separate main content from preferences
         vertical_paned = tk.PanedWindow(
@@ -778,6 +796,23 @@ class SessionGenerationTabMixin:
 
         self.spectrum_buttons = {"on": spectrum_on_btn, "off": spectrum_off_btn}
         self.update_spectrum_switch_display()
+
+        # Source indicator: shown when parameters are restored from a loaded pkl
+        self.session_source_frame = tk.Frame(
+            params_scrollable_frame, bg="#e8f4e8", bd=1, relief=tk.RIDGE
+        )
+        self.session_source_label = tk.Label(
+            self.session_source_frame,
+            text="",
+            font=self.fonts["small"],
+            bg="#e8f4e8",
+            fg="#2a6e2a",
+            anchor=tk.W,
+            padx=6,
+            pady=3,
+        )
+        self.session_source_label.pack(fill=tk.X)
+        # Hidden until a session is loaded (not packed yet)
 
         # Configure grid weights
         root.columnconfigure(0, weight=1)
@@ -2753,6 +2788,216 @@ class SessionGenerationTabMixin:
         except Exception:
             pass
 
+    # ------------------------------------------------------------------ #
+    #  Declarative parameter map for _apply_session_params.               #
+    #  Each entry: (session_attr, ui_var_name, transform_fn)              #
+    #  Add a new row here whenever a session attribute gains a UI widget. #
+    # ------------------------------------------------------------------ #
+    _SESSION_PARAM_MAP = [
+        ("_objective_lambda_weight", "lambda_weight_var", float),
+        ("_objective_percentile", "percentile_var", int),
+        ("level_gap_tol", "level_gap_tol_var", float),
+        ("_female_boost", "female_boost_var", float),
+    ]
+
+    def _apply_session_params(self, session, source_name=None):
+        """Restore all UI parameters from *session*.
+
+        The declarative _SESSION_PARAM_MAP above is the single place to
+        register new simple scalar parameter bindings. Composite cases
+        (spectrum, games-per-round, round rows) are handled just below it.
+        """
+        # --- Simple scalar vars (map-driven) ---
+        for attr, var_name, transform in self._SESSION_PARAM_MAP:
+            value = getattr(session, attr, None)
+            if value is not None:
+                try:
+                    getattr(self, var_name).set(
+                        transform(value) if transform else value
+                    )
+                except Exception as exc:
+                    print(
+                        f"[_apply_session_params] Could not restore {var_name}: {exc}"
+                    )
+
+        # --- Spectrum (requires visual toggle update) ---
+        spectrum_val = getattr(session, "spectrum", None)
+        if spectrum_val is not None:
+            try:
+                self.set_spectrum_state(bool(spectrum_val))
+            except Exception as exc:
+                print(f"[_apply_session_params] Could not restore spectrum: {exc}")
+
+        # --- Games per round ---
+        games_list = getattr(session, "games_per_round_each_round", None)
+        if games_list:
+            try:
+                unique = set(games_list)
+                self.games_per_round_var.set(
+                    str(next(iter(unique))) if len(unique) == 1 else "auto"
+                )
+            except Exception as exc:
+                print(
+                    f"[_apply_session_params] Could not restore games_per_round: {exc}"
+                )
+
+        # --- Number of rounds + per-round type/gender (rebuilds round rows) ---
+        n_rounds = getattr(session, "amount_of_rounds", None)
+        if n_rounds:
+            try:
+                self._pref_round_types = list(
+                    getattr(session, "type_preferences", []) or []
+                )
+                self._pref_round_genders = list(
+                    getattr(session, "gender_preferences", []) or []
+                )
+                self.num_rounds_var.set(n_rounds)
+                if hasattr(self, "rounds_label"):
+                    self.rounds_label.config(text=str(n_rounds))
+                self.create_round_preferences()
+            except Exception as exc:
+                print(f"[_apply_session_params] Could not restore round prefs: {exc}")
+
+        # --- Source indicator banner ---
+        if hasattr(self, "session_source_frame"):
+            if source_name:
+                self.session_source_label.config(
+                    text=f"\U0001f4cc Parameters loaded from: {source_name}"
+                )
+                self.session_source_frame.pack(fill=tk.X, padx=4, pady=(0, 4))
+            else:
+                self.session_source_frame.pack_forget()
+
+    def _load_existing_session(self):
+        """Load a previously saved session from a .pkl file."""
+        from tkinter import filedialog  # noqa: PLC0415
+        from core.pickle_helper import load_session  # noqa: PLC0415
+        from core.charts import (  # noqa: PLC0415
+            create_session_games_png,
+            create_session_games_round_images,
+        )
+
+        sessions_dir = os.path.join(os.getcwd(), "sessions")
+        if not os.path.exists(sessions_dir):
+            sessions_dir = os.getcwd()
+
+        pkl_path = filedialog.askopenfilename(
+            title="Load Session",
+            initialdir=sessions_dir,
+            filetypes=[("Pickle files", "*.pkl"), ("All files", "*.*")],
+        )
+        if not pkl_path:
+            return  # user cancelled
+
+        # Disable both action buttons while loading to prevent double-clicks
+        self.run_btn.config(state=tk.DISABLED)
+        self.load_session_btn.config(state=tk.DISABLED)
+
+        try:
+            import datetime  # noqa: PLC0415
+            import shutil  # noqa: PLC0415
+
+            print(f"\nLoading session from: {pkl_path}")
+            session = load_session(pkl_path)
+
+            # Stamp objective metadata if absent (legacy pkls)
+            if not getattr(session, "_objective_function_name", None):
+                session._objective_function_name = "mean_min_max_happiness_objective"
+            if getattr(session, "_objective_lambda_weight", None) is None:
+                session._objective_lambda_weight = 2.4
+            if getattr(session, "_objective_percentile", None) is None:
+                session._objective_percentile = 10
+
+            self.session_of_rounds = session
+
+            # Sync player button selection to the loaded session's players
+            session_player_names = {p.name for p in session.players}
+            self.clear_selection()
+            for player_name in self.player_buttons:
+                if player_name in session_player_names:
+                    self.player_button_states[player_name] = True
+                    self.player_buttons[player_name].config(
+                        bg=self.colors["accent_yellow"],
+                        fg=self.colors["text_dark"],
+                        relief=tk.SUNKEN,
+                    )
+                    self.selected_players.append(player_name)
+            self._update_count_label()
+            self.update_info_display()
+
+            # Restore all session parameters into the UI widgets
+            self._apply_session_params(session, source_name=os.path.basename(pkl_path))
+
+            # --- Create a fresh working folder for today so the original is untouched ---
+            date_str = datetime.datetime.now().strftime("%d_%m_%Y")
+            new_folder = os.path.join("sessions", date_str)
+            counter = 2
+            while os.path.exists(new_folder):
+                new_folder = os.path.join("sessions", f"{date_str}_{counter}")
+                counter += 1
+            os.makedirs(new_folder, exist_ok=True)
+            print(f"  Working folder: {new_folder}")
+
+            # Copy the base pkl into the new folder as the canonical starting point
+            base_pkl_filename = f"session_of_rounds_{date_str}.pkl"
+            new_pkl_path = os.path.join(new_folder, base_pkl_filename)
+            shutil.copy2(pkl_path, new_pkl_path)
+
+            # Copy plots directory if it exists in the source folder
+            source_folder = os.path.dirname(os.path.abspath(pkl_path))
+            source_plots = os.path.join(source_folder, "plots")
+            new_plots_dir = os.path.join(new_folder, "plots")
+            if os.path.isdir(source_plots):
+                shutil.copytree(source_plots, new_plots_dir)
+
+            self._active_session_folder = new_folder
+            # Tell show_games_editor() which file is the baseline for score history
+            self._loaded_pkl_path = new_pkl_path
+
+            print("Session loaded successfully!")
+            print(f"  Players: {len(session.players)}")
+            print(f"  Rounds: {len(session.rounds)}")
+
+            # Regenerate session games PNG for the UI
+            session_games_png = os.path.join(new_folder, "session_games.png")
+            _round_imgs = []
+            try:
+                create_session_games_png(
+                    session,
+                    session_games_png,
+                    show_levels=self.png_show_levels_var.get(),
+                )
+                _round_imgs = create_session_games_round_images(
+                    session,
+                    show_levels=self.png_show_levels_var.get(),
+                )
+            except Exception as png_err:
+                print(f"Warning: Could not generate session games PNG: {png_err}")
+                session_games_png = None
+
+            # Open the same tabs as after generation, but keep focus on Session Generation
+            self.show_games_editor()
+            self.main_notebook.select(self.session_tab)
+            if session_games_png and os.path.exists(session_games_png):
+                self.show_session_games_tab(session_games_png, round_images=_round_imgs)
+            if os.path.exists(new_plots_dir):
+                self.show_plots_window(new_plots_dir)
+
+            print("\n" + "=" * 80)
+            print("Session loaded and editor opened!")
+            print("=" * 80)
+
+        except Exception as e:
+            import traceback  # noqa: PLC0415
+
+            print(f"Error loading session: {e}")
+            traceback.print_exc()
+            messagebox.showerror("Load Failed", f"Could not load session:\n\n{str(e)}")
+        finally:
+            # Re-enable both action buttons regardless of success or failure
+            self.run_btn.config(state=tk.NORMAL)
+            self.load_session_btn.config(state=tk.NORMAL)
+
     def run_session(self):
         """Run session generation with selected players"""
         if len(self.selected_players) < 4:
@@ -2885,6 +3130,7 @@ class SessionGenerationTabMixin:
             never_met_bonus_cap=never_met_bonus_cap,
             extra_parameters=_ep,
             print_progress=print_progress,
+            female_shift=female_shift,
         )
 
     def run_generation_with_progress(
@@ -2908,6 +3154,7 @@ class SessionGenerationTabMixin:
         never_met_bonus_cap=4,
         extra_parameters=None,
         print_progress=True,
+        female_shift=0.0,
     ):
         """Run session generation with progress updates."""
         try:
@@ -3009,6 +3256,7 @@ class SessionGenerationTabMixin:
                 "mean_min_max_happiness_objective"
             )
             session_of_rounds._objective_percentile = percentile
+            session_of_rounds._female_boost = female_shift
 
             # Save the session using save_session_of_rounds with default parameters
             try:
@@ -3037,6 +3285,7 @@ class SessionGenerationTabMixin:
                     # Get the most recently modified one
                     if folders_with_plots:
                         most_recent = max(folders_with_plots, key=os.path.getmtime)
+                        self._active_session_folder = most_recent
                         plots_dir = os.path.join(most_recent, "plots")
 
                         # Generate and show the Session Games overview PNG
@@ -3086,6 +3335,7 @@ class SessionGenerationTabMixin:
                         ]
                         if session_folders:
                             most_recent = max(session_folders, key=os.path.getmtime)
+                            self._active_session_folder = most_recent
                             plots_dir = os.path.join(most_recent, "plots")
                             if os.path.exists(plots_dir):
                                 self.show_games_editor()
