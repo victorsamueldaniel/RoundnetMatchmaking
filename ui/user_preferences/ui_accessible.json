@@ -10,13 +10,17 @@
     "balanced",
     "balanced",
     "level",
-    "level"
+    "level",
+    "balanced",
+    "balanced"
   ],
   "round_gender_preferences": [
+    "mixed",
+    "mixed",
     "open",
-    "mixed",
-    "mixed",
-    "open"
+    "open",
+    "open",
+    "mixed"
   ],
   "female_boost": 0.1,
   "preferred_pairs": [],

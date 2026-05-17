@@ -915,7 +915,9 @@ class GamesRound:
                 go, "non_spectrum.high_level_threshold.self_level_multiplier", 0.85
             ),
             "happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor": _cfg_get(
-                hc, "penalties.same_people_in_game_history.weight_same_teammate_divisor", 2
+                hc,
+                "penalties.same_people_in_game_history.weight_same_teammate_divisor",
+                2,
             ),
             "happiness_penalty_gender_preference_not_satisfied_spectrum": _cfg_get(
                 hc, "penalties.gender_preference_not_satisfied.spectrum", 5
@@ -929,15 +931,26 @@ class GamesRound:
             "happiness_bonus_above_median_level_type_level": _cfg_get(
                 hc, "bonuses.above_median_level.type_level", 1
             ),
-            "depth_0_cap": max(1, int(_cfg_get(
-                go, "generate_all_game_combinations.max_combos.depth_0", 20
-            ))),
-            "depth_n_cap": max(1, int(_cfg_get(
-                go, "generate_all_game_combinations.max_combos.depth_n", 10
-            ))),
-            "team_combo_cap": max(1, int(_cfg_get(
-                go, "generate_all_game_combinations.max_team_combos", 3
-            ))),
+            "depth_0_cap": max(
+                1,
+                int(
+                    _cfg_get(
+                        go, "generate_all_game_combinations.max_combos.depth_0", 20
+                    )
+                ),
+            ),
+            "depth_n_cap": max(
+                1,
+                int(
+                    _cfg_get(
+                        go, "generate_all_game_combinations.max_combos.depth_n", 10
+                    )
+                ),
+            ),
+            "team_combo_cap": max(
+                1,
+                int(_cfg_get(go, "generate_all_game_combinations.max_team_combos", 3)),
+            ),
             "level_sorter_round_factor": _cfg_get(
                 go, "games_by_level._level_sorter.round_factor", 1
             ),
@@ -960,18 +973,42 @@ class GamesRound:
             gender_level_medians=self.gender_level_medians,
             never_met_bonus_per_player=self.never_met_bonus_per_player,
             never_met_bonus_cap=self.never_met_bonus_cap,
-            spectrum_prey_opponents_mean_level_multiplier=p["spectrum_prey_opponents_mean_level_multiplier"],
-            spectrum_challenger_opponents_mean_level_multiplier=p["spectrum_challenger_opponents_mean_level_multiplier"],
-            spectrum_challenger_level_gap_tol_multiplier=p["spectrum_challenger_level_gap_tol_multiplier"],
-            spectrum_equilibrist_level_gap_tol_multiplier=p["spectrum_equilibrist_level_gap_tol_multiplier"],
-            spectrum_classist_level_gap_tol_multiplier=p["spectrum_classist_level_gap_tol_multiplier"],
-            spectrum_chill_players_chill_threshold=p["spectrum_chill_players_chill_threshold"],
-            non_spectrum_high_level_threshold_self_level_multiplier=p["non_spectrum_high_level_threshold_self_level_multiplier"],
-            happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor=p["happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor"],
-            happiness_penalty_gender_preference_not_satisfied_spectrum=p["happiness_penalty_gender_preference_not_satisfied_spectrum"],
-            happiness_penalty_gender_preference_not_satisfied_non_spectrum=p["happiness_penalty_gender_preference_not_satisfied_non_spectrum"],
-            happiness_bonus_minority_gender_mixed=p["happiness_bonus_minority_gender_mixed"],
-            happiness_bonus_above_median_level_type_level=p["happiness_bonus_above_median_level_type_level"],
+            spectrum_prey_opponents_mean_level_multiplier=p[
+                "spectrum_prey_opponents_mean_level_multiplier"
+            ],
+            spectrum_challenger_opponents_mean_level_multiplier=p[
+                "spectrum_challenger_opponents_mean_level_multiplier"
+            ],
+            spectrum_challenger_level_gap_tol_multiplier=p[
+                "spectrum_challenger_level_gap_tol_multiplier"
+            ],
+            spectrum_equilibrist_level_gap_tol_multiplier=p[
+                "spectrum_equilibrist_level_gap_tol_multiplier"
+            ],
+            spectrum_classist_level_gap_tol_multiplier=p[
+                "spectrum_classist_level_gap_tol_multiplier"
+            ],
+            spectrum_chill_players_chill_threshold=p[
+                "spectrum_chill_players_chill_threshold"
+            ],
+            non_spectrum_high_level_threshold_self_level_multiplier=p[
+                "non_spectrum_high_level_threshold_self_level_multiplier"
+            ],
+            happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor=p[
+                "happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor"
+            ],
+            happiness_penalty_gender_preference_not_satisfied_spectrum=p[
+                "happiness_penalty_gender_preference_not_satisfied_spectrum"
+            ],
+            happiness_penalty_gender_preference_not_satisfied_non_spectrum=p[
+                "happiness_penalty_gender_preference_not_satisfied_non_spectrum"
+            ],
+            happiness_bonus_minority_gender_mixed=p[
+                "happiness_bonus_minority_gender_mixed"
+            ],
+            happiness_bonus_above_median_level_type_level=p[
+                "happiness_bonus_above_median_level_type_level"
+            ],
         )
 
     def create_games(self, seed=None):
@@ -1458,7 +1495,6 @@ class GamesRound:
         noisy_level = round(player.level * round_factor) / round_factor + rng.uniform(
             -max_noise, max_noise
         )
-        print(f"player={player.name} level={player.level} noisy_level={noisy_level}")
         return (noisy_level, -player.happiness)
 
     def create_games_by_level(self, alternate=False, seed=None, **kwargs):

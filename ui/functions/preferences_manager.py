@@ -255,10 +255,11 @@ def ensure_preferences_exist() -> None:
         (_UI_STABLE, _UI_DEFAULTS),
         (_UI_TEMP, _UI_DEFAULTS),
         (_EXTRA_STABLE, _EXTRA_DEFAULTS),
-        (_EXTRA_TEMP, _EXTRA_DEFAULTS),
     ):
         if not os.path.exists(path):
             _write_json(path, dict(defaults))
+    if not os.path.exists(_EXTRA_TEMP):
+        _write_json(_EXTRA_TEMP, _read_json(_EXTRA_STABLE, _EXTRA_DEFAULTS))
 
 
 def load_ui_preferences() -> dict:
@@ -269,6 +270,35 @@ def load_ui_preferences() -> dict:
 def load_extra_preferences() -> dict:
     """Return stable extra-parameters dict, merged with developer defaults."""
     return _read_json(_EXTRA_STABLE, _EXTRA_DEFAULTS)
+
+
+def load_extra_preferences_temp() -> dict:
+    """Return the runtime-editable temp extra-parameters dict.
+
+    Use this at session-generation time so that in-session edits to
+    extra_parameters_temp.json are picked up without restarting the app.
+    Falls back to developer defaults if the file is missing or corrupt.
+    """
+    return _read_json(_EXTRA_TEMP, _EXTRA_DEFAULTS)
+
+
+def extra_temp_differs_from_stable() -> bool:
+    """Return True if extra_parameters_temp.json content differs from extra_parameters.json."""
+    stable = _read_json(_EXTRA_STABLE, _EXTRA_DEFAULTS)
+    temp = _read_json(_EXTRA_TEMP, _EXTRA_DEFAULTS)
+    return stable != temp
+
+
+def save_extra_temp_as_dated(date_str: str) -> str:
+    """Archive extra_parameters_temp.json as extra_parameters_temp_{date_str}.json.
+
+    The file is written next to the other prefs files in _prefs_dir.
+    Returns the absolute path of the saved file.
+    """
+    temp = _read_json(_EXTRA_TEMP, _EXTRA_DEFAULTS)
+    dated_path = os.path.join(_prefs_dir, f"extra_parameters_temp_{date_str}.json")
+    _write_json(dated_path, temp)
+    return dated_path
 
 
 def save_ui_default_saved(prefs_subset: dict) -> None:
@@ -306,6 +336,23 @@ def get_not_saved_diff(full_current_prefs: dict) -> dict:
         stable_val = stable.get(k)
         if current_val != stable_val:
             diff[k] = current_val
+    return diff
+
+
+def get_not_saved_diff_from_temp() -> dict:
+    """Return mapping of not-saved keys where ui_accessible_temp.json differs from stable.
+
+    Mirrors extra_temp_differs_from_stable(): compares the temp file directly against the
+    stable file so that the close-time check is independent of live widget state.
+    """
+    stable = _read_json(_UI_STABLE, _UI_DEFAULTS)
+    temp = _read_json(_UI_TEMP, _UI_DEFAULTS)
+    diff = {}
+    for k in UI_DEFAULT_NOT_SAVED_KEYS:
+        temp_val = temp.get(k)
+        stable_val = stable.get(k)
+        if temp_val != stable_val:
+            diff[k] = temp_val
     return diff
 
 

@@ -14,6 +14,8 @@ All notable changes to this project are documented in this file.
 - Score history entries are now `(score: float, pkl_path: str | None)` tuples instead of bare floats. `_render_score_history` handles both formats for backward compatibility.
 - Current score chip is visually distinguished (SUNKEN relief, 3 px border, ► prefix) to make the active state clear at a glance.
 - swapped save all and confirm choices buttons on app quit
+- **Extra parameters live-read**: `run_session` (and any future generation triggers) now reads `extra_parameters_temp.json` fresh at each call via `load_extra_preferences_temp()`, so edits made to that file mid-session are picked up on the next generation without restarting the app.
+- **Extra parameters archive on close**: on app exit, if `extra_parameters_temp.json` differs from `extra_parameters.json`, a styled save dialog appears offering to archive the temp file as `extra_parameters_temp_DD_MM_YYYY.json` in `ui/user_preferences/` for later reuse.
 ## [1.5.0]
 ### Changed
 #### new sorter in level games

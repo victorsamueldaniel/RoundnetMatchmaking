@@ -227,47 +227,153 @@ class _UnsavedPrefsDialog:
         return [k for k, v in self.choices.items() if v.get() == "save"]
 
 
-def _on_app_close(root, app):
-    """Show per-parameter save dialog, clean up temp files, then close."""
-    from ui.functions.preferences_manager import (
-        save_ui_not_saved,
-        cleanup_temp_files,
+def _ask_save_extra_params(root, colors, date_str: str) -> bool:
+    """Styled modal: ask whether to archive extra_parameters_temp.json as a dated file.
+
+    Returns True if the user chose Save, False otherwise.
+    """
+    import datetime  # noqa: F401 — date_str already computed by caller
+
+    result = [False]
+
+    dlg = tk.Toplevel(root)
+    dlg.title("Extra parameters modified")
+    dlg.configure(bg=colors["bg_dark"])
+    dlg.resizable(False, False)
+    dlg.transient(root)
+    dlg.grab_set()
+
+    tk.Label(
+        dlg,
+        text="Extra parameters were modified",
+        font=("Arial", 14, "bold"),
+        fg=colors["accent_yellow"],
+        bg=colors["bg_dark"],
+    ).pack(pady=(20, 4), padx=28)
+
+    tk.Label(
+        dlg,
+        text=(
+            "The generation knobs in extra_parameters_temp.json\n"
+            "differ from extra_parameters.json.\n\n"
+            f"Save a copy as extra_parameters_temp_{date_str}.json?"
+        ),
+        font=("Arial", 11),
+        fg=colors["text_light"],
+        bg=colors["bg_dark"],
+        justify=tk.CENTER,
+    ).pack(pady=(0, 14), padx=28)
+
+    tk.Frame(dlg, bg=colors["accent_yellow"], height=1).pack(
+        fill=tk.X, padx=20, pady=(8, 0)
     )
 
-    try:
-        current = app._collect_ui_all_tracked()
-        # Only show the dialog for keys that the user actually changed this session.
-        from ui.functions.preferences_manager import UI_DEFAULT_NOT_SAVED_KEYS
+    btn_frame = tk.Frame(dlg, bg=colors["bg_dark"])
+    btn_frame.pack(pady=14)
 
-        initial = getattr(app, "_initial_not_saved", {})
-        diff = {
-            k: current[k]
-            for k in UI_DEFAULT_NOT_SAVED_KEYS
-            if k in current and current[k] != initial.get(k)
-        }
+    def _save():
+        result[0] = True
+        dlg.destroy()
+
+    tk.Button(
+        btn_frame,
+        text="Save",
+        font=("Arial", 11, "bold"),
+        bg=colors["accent_red"],
+        fg=colors["text_light"],
+        activebackground="#5a0100",
+        activeforeground=colors["text_light"],
+        relief=tk.FLAT,
+        padx=18,
+        pady=6,
+        cursor="hand2",
+        command=_save,
+    ).pack(side=tk.LEFT, padx=8)
+
+    tk.Button(
+        btn_frame,
+        text="Discard",
+        font=("Arial", 11),
+        bg="#555555",
+        fg=colors["text_light"],
+        activebackground="#444444",
+        activeforeground=colors["text_light"],
+        relief=tk.FLAT,
+        padx=18,
+        pady=6,
+        cursor="hand2",
+        command=dlg.destroy,
+    ).pack(side=tk.LEFT, padx=8)
+
+    dlg.update_idletasks()
+    x = root.winfo_x() + (root.winfo_width() - dlg.winfo_width()) // 2
+    y = root.winfo_y() + (root.winfo_height() - dlg.winfo_height()) // 2
+    dlg.geometry(f"+{x}+{y}")
+
+    root.wait_window(dlg)
+    return result[0]
+
+
+def _on_app_close(root, app):
+    """Show per-parameter save dialogs, clean up temp files, then close."""
+    import datetime
+
+    from ui.functions.preferences_manager import (
+        cleanup_temp_files,
+        update_ui_temp,
+    )
+
+    _default_colors = {
+        "bg_dark": "#2E2E2E",
+        "accent_yellow": "#FED403",
+        "accent_red": "#7F0301",
+        "text_light": "#FFFFFF",
+        "text_dark": "#1A1A1A",
+    }
+    colors = getattr(app, "colors", _default_colors)
+
+    # Flush current live widget state to temp so the comparison below is authoritative.
+    try:
+        update_ui_temp(app._collect_ui_all_tracked())
+    except Exception:
+        pass
+
+    # ── UI-accessible not-saved keys (temp vs stable) ───────────────────
+    try:
+        from ui.functions.preferences_manager import (
+            get_not_saved_diff_from_temp,
+            save_ui_not_saved,
+        )
+
+        diff = get_not_saved_diff_from_temp()
         if diff:
-            colors = getattr(
-                app,
-                "colors",
-                {
-                    "bg_dark": "#2E2E2E",
-                    "accent_yellow": "#FED403",
-                    "accent_red": "#7F0301",
-                    "text_light": "#FFFFFF",
-                },
-            )
             dialog = _UnsavedPrefsDialog(root, list(diff.keys()), colors)
             keys_to_save = dialog.get_keys_to_save()
             if keys_to_save:
                 save_ui_not_saved({k: diff[k] for k in keys_to_save})
     except Exception:
         pass
-    finally:
-        try:
-            cleanup_temp_files()
-        except Exception:
-            pass
-        root.destroy()
+
+    # ── Extra parameters archive (temp vs stable) ───────────────────────
+    try:
+        from ui.functions.preferences_manager import (
+            extra_temp_differs_from_stable,
+            save_extra_temp_as_dated,
+        )
+
+        if extra_temp_differs_from_stable():
+            date_str = datetime.datetime.now().strftime("%d_%m_%Y")
+            if _ask_save_extra_params(root, colors, date_str):
+                saved_path = save_extra_temp_as_dated(date_str)
+                print(f"[prefs] Extra parameters archived: {saved_path}")
+    except Exception:
+        pass
+
+    try:
+        cleanup_temp_files()
+    except Exception:
+        pass
+    root.destroy()
 
 
 def main():

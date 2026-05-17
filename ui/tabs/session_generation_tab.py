@@ -1680,6 +1680,12 @@ class SessionGenerationTabMixin:
         # Update count label and info display
         self._update_count_label()
         self.update_info_display()
+        try:
+            from ui.functions.preferences_manager import update_ui_temp
+
+            update_ui_temp(self._collect_ui_all_tracked())
+        except Exception:
+            pass
 
     def _update_count_label(self):
         """Update the count label with total, male and female counts."""
@@ -2143,6 +2149,12 @@ class SessionGenerationTabMixin:
             # Commit working copy back to the app state
             self.preferred_pairs = list(pairs_working)
             self._update_pairs_count_label()
+            try:
+                from ui.functions.preferences_manager import update_ui_temp
+
+                update_ui_temp(self._collect_ui_all_tracked())
+            except Exception:
+                pass
             win.destroy()
 
         add_1_btn.config(command=lambda: _on_add(1))
@@ -2775,6 +2787,7 @@ class SessionGenerationTabMixin:
             self.lambda_weight_var,
             self.percentile_var,
             self.spectrum_var,
+            self.female_boost_var,
         ):
             _var.trace_add("write", self._on_auto_save_change)
 
@@ -3078,8 +3091,13 @@ class SessionGenerationTabMixin:
         else:
             games_per_round = int(games_per_round_setting)
 
-        # Parameters for seed optimization (from extra_parameters JSON when available)
-        _ep = getattr(self, "_extra_prefs", {})
+        # Parameters for seed optimization — read fresh from temp file so that
+        # in-session edits to extra_parameters_temp.json are picked up without restart.
+        from ui.functions.preferences_manager import (
+            load_extra_preferences_temp,
+        )  # noqa: PLC0415
+
+        _ep = load_extra_preferences_temp()
         first_seed = _ep.get("first_seed", 0)
         last_seed = _ep.get("last_seed", 9)
         num_iter = _ep.get("num_iter", 435)

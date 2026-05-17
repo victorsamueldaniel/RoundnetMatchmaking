@@ -14,7 +14,7 @@ parameters and one for non-UI generation knobs:
 | `ui_accessible.json` | Long-term UI preferences | Persists across sessions |
 | `ui_accessible_temp.json` | Full runtime snapshot | Created on launch, deleted on exit |
 | `extra_parameters.json` | Generation algorithm knobs | Persists (developer-edited) |
-| `extra_parameters_temp.json` | Runtime copy of extra params | Created on launch, deleted on exit |
+| `extra_parameters_temp.json` | Runtime editable copy; read at each session generation | Created on launch, deleted on exit; optionally archived at close |
 
 ---
 
@@ -55,8 +55,10 @@ opt-in parameter requires editing only that file.
 
 ### `extra_parameters.json` — developer-only knobs
 
-Not exposed in the UI. Edited directly in the JSON file. Read once at startup and
-stored on `self._extra_prefs` in `SessionGenerationTabMixin`.
+Not exposed in the UI. Edit `extra_parameters_temp.json` directly during a session
+to try different knobs — changes are picked up on the **next Run Session click**
+without restarting the app. `extra_parameters.json` is the stable baseline read
+once at startup.
 
 | Key | Default | Description |
 |---|---|---|
@@ -99,7 +101,7 @@ Advanced expert knobs are nested and use script terminology to mirror call sites
 App launch
   └── ensure_preferences_exist()   create missing JSON files from developer defaults
   └── load_ui_preferences()        read ui_accessible.json → merged with defaults
-  └── load_extra_preferences()     read extra_parameters.json → stored as _extra_prefs
+  └── load_extra_preferences()     read extra_parameters.json → stored as _extra_prefs (startup snapshot)
   └── _apply_ui_preferences()      push values into all UI controls
   └── _initial_not_saved snapshot  record the not-saved keys at startup for change detection
   └── trace wiring                 tkinter write-traces → _on_auto_save_change
@@ -110,12 +112,21 @@ Runtime (every UI change to a default-saved key)
         save_ui_default_saved()    → ui_accessible.json  (only saved keys)
         update_ui_temp()           → ui_accessible_temp.json  (all tracked keys)
 
+Session generation (Run Session / other generation triggers)
+  └── load_extra_preferences_temp()  read extra_parameters_temp.json fresh each time
+        picks up any edits made to extra_parameters_temp.json mid-session
+        without restarting the app
+
 App close (X button / WM_DELETE_WINDOW)
   └── _collect_ui_all_tracked()    snapshot current full state
   └── diff vs _initial_not_saved   find not-saved keys changed this session
   └── if any changed → _UnsavedPrefsDialog
         per-param Save / Discard toggle (defaults to Discard)
         Confirm → save_ui_not_saved() for chosen keys → ui_accessible.json
+  └── extra_temp_differs_from_stable()  compare extra_parameters_temp.json vs extra_parameters.json
+  └── if different → _ask_save_extra_params dialog
+        Save   → save_extra_temp_as_dated(DD_MM_YYYY) → extra_parameters_temp_DD_MM_YYYY.json
+        Discard → no file written
   └── cleanup_temp_files()         delete both _temp files
   └── root.destroy()
 ```
