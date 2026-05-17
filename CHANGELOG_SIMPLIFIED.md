@@ -4,6 +4,8 @@
 - **Load an old session** — a new 📂 Load Session button on the main screen lets you pick any `.pkl` file from a past session. The Games Editor, Session Games view, and plots all open exactly as they would after generating a new session.
 - **No more overwriting on Apply** — each time you apply changes in the Games Editor, a new numbered snapshot is saved (`_v1`, `_v2`, …) instead of overwriting a single file. The original generated session is always preserved.
 - **Restore previous state from score history** — the score history strip in the Games Editor now shows clickable chips for every past state. Click an earlier chip to jump back to that version of the session.
+- **Extra parameters picked up live** — changes to `extra_parameters_temp.json` (seed range, iteration count, penalties…) are now read fresh on every generation, so you no longer need to restart the app after editing that file.
+- **Archive extra parameters on close** — when you quit, if the temp extra-parameters file differs from the saved one, a dialog offers to archive it as a dated backup (`extra_parameters_temp_DD_MM_YYYY.json`) so you can reuse it later.
 
 # Version 1.5.0 — May 10, 2026
 ## What's new?
