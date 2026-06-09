@@ -3061,6 +3061,7 @@ class SessionGenerationTabMixin:
                 .isin(["female", "f"])
             )
             if female_mask.any():
+                sub_df["Level"] = sub_df["Level"].astype(float)
                 boosted_levels = pd.to_numeric(
                     sub_df.loc[female_mask, "Level"], errors="coerce"
                 ).fillna(0)
@@ -3069,6 +3070,7 @@ class SessionGenerationTabMixin:
                 ).round(1)
 
                 if "Category" in sub_df.columns:
+                    sub_df["Category"] = sub_df["Category"].astype(float)
                     boosted_categories = pd.to_numeric(
                         sub_df.loc[female_mask, "Category"], errors="coerce"
                     ).fillna(0)
