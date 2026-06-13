@@ -1,5 +1,15 @@
 # Changelog
 All notable changes to this project are documented in this file.
+## [1.6.0] - ...
+- Add AI Quick Reference documentation, bug replay script, model tests, and bug reporter
+
+- Created AI Quick Reference documentation in docs/AI_REFERENCE.md for quick lookup of data model attributes, function locations, and common task recipes.
+
+- Added a bug replay script in scripts/replay_bug.py to facilitate the reproduction of bug reports by setting up the environment and launching the app.
+
+- Introduced tests for model helpers in tests/test_models_extras.py, covering compute_session_score, reorder_rounds, GameOfFour, and TeamOfTwo.
+
+- Implemented a bug reporter in ui/functions/bug_reporter.py to collect and package bug reports, including logs, preferences, and session data.
 ## [1.6.0] - 2026-05-14
 ### Added
 - **Load Existing Session** button (📂) in the Session Generation tab. Opens a file dialog starting in `sessions/`, lets the user pick any `.pkl` snapshot (original or versioned), and opens the same Games Editor / Session Games / Plots tabs that appear after generating a session.
