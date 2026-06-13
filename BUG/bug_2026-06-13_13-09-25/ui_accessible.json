@@ -22,6 +22,7 @@
     "Adrian",
     "Asli",
     "Cedric",
+    "Chiara",
     "Colin",
     "Dano",
     "David",
@@ -33,6 +34,7 @@
     "Jasmin",
     "Julia",
     "Julien",
+    "Kaija",
     "Katja",
     "Leila",
     "Leo",
@@ -50,8 +52,8 @@
     "Teo",
     "Tim",
     "Tobias",
-    "Victor"
+    "Victor",
+    "Yves"
   ],
-  "female_boost": -0.7,
-  "preferred_pairs": []
+  "female_boost": -0.7
 }

@@ -116,13 +116,25 @@ def set_window_icon_from_logo(root):
 # Console output redirect
 # ---------------------------------------------------------------------------
 
+# Set by bug_reporter.init_log_file() before the first ConsoleRedirector is
+# created.  ConsoleRedirector will tee all stdout output to this file.
+_log_file_path: str | None = None
+
 
 class ConsoleRedirector(io.StringIO):
-    """Redirect stdout to a tkinter Text widget."""
+    """Redirect stdout to a tkinter Text widget, and tee to a log file."""
 
     def __init__(self, text_widget):
         super().__init__()
         self.text_widget = text_widget
+        self._log_fh = None
+        if _log_file_path:
+            try:
+                self._log_fh = open(  # noqa: SIM115
+                    _log_file_path, "a", encoding="utf-8", buffering=1
+                )
+            except Exception:
+                pass
 
     def write(self, string):
         if string:  # Write all non-empty strings, including newlines
@@ -131,10 +143,19 @@ class ConsoleRedirector(io.StringIO):
             self.text_widget.see(tk.END)
             self.text_widget.config(state=tk.DISABLED)
             self.text_widget.update()
+            if self._log_fh is not None:
+                try:
+                    self._log_fh.write(string)
+                except Exception:
+                    pass
         return len(string)
 
     def flush(self):
-        pass
+        if self._log_fh is not None:
+            try:
+                self._log_fh.flush()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------

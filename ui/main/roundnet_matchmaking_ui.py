@@ -3,11 +3,14 @@
 
 import sys
 import os
+import threading
+import traceback as _traceback
 
 import tkinter as tk
 from tkinter import messagebox
 
 from ui.functions.ui_helpers import current_dir, current_dir_source, load_module
+from ui.functions.bug_reporter import init_log_file, collect_bug_report
 from ui.functions.setup_wizard import (
     _XLSX_CONFIG_PATH,
     _run_setup_wizard,
@@ -27,6 +30,30 @@ import ui.tabs.session_games_tab as session_games_tab
 
 main_module = None
 ftf_module = None
+
+
+def _make_crash_handler(root, app):
+    """Return a sys.excepthook that collects a bug report then re-raises."""
+
+    def _handler(exc_type, exc_value, exc_tb):
+        if exc_type is KeyboardInterrupt:
+            return
+        tb_str = "".join(_traceback.format_exception(exc_type, exc_value, exc_tb))
+        try:
+            pkg_dir = collect_bug_report(app, traceback_str=tb_str)
+            messagebox.showerror(
+                "Unexpected Error",
+                f"The application encountered an unexpected error.\n\n"
+                f"{exc_type.__name__}: {exc_value}\n\n"
+                f"A bug report has been saved to:\n{pkg_dir}\n\n"
+                f"Please attach this folder when reporting the issue on GitHub.",
+            )
+        except Exception:
+            pass
+        # Propagate to the default handler so the traceback still prints.
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+    return _handler
 
 
 class PlayerSelectionUI(
@@ -380,6 +407,8 @@ def main():
     """Main function to run the UI."""
     global main_module, ftf_module
 
+    init_log_file()
+
     _ensure_windows_tcl_env()
     print(f"[startup] runtime root ({current_dir_source}): {current_dir}")
     root = tk.Tk()
@@ -440,6 +469,13 @@ def main():
 
     app = PlayerSelectionUI(root)
     root.protocol("WM_DELETE_WINDOW", lambda: _on_app_close(root, app))
+
+    # Install global crash hooks so unhandled exceptions auto-collect a report.
+    _handler = _make_crash_handler(root, app)
+    sys.excepthook = _handler
+    threading.excepthook = lambda args: _handler(
+        args.exc_type, args.exc_value, args.exc_traceback
+    )
 
     splash.destroy()
     root.deiconify()

@@ -72,6 +72,7 @@ FILES_TO_COPY = [
     "ui/functions/tab_functions.py",
     "ui/functions/setup_wizard.py",
     "ui/functions/ui_helpers.py",
+    "ui/functions/bug_reporter.py",
     "ui/logo.png",
 ]
 

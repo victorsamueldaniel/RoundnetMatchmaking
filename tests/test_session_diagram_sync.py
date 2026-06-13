@@ -19,5 +19,13 @@ def main() -> int:
     return result.returncode
 
 
+def test_session_diagram_sync():
+    """SESSION_CREATION_DIAGRAM.md must be in sync with session_diagram_registry.json."""
+    assert main() == 0, (
+        "Session diagram is out of sync with registry. "
+        "Run: python docs/diagrams/session_creation/generate_session_diagram.py"
+    )
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
