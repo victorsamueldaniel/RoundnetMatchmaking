@@ -1,6 +1,6 @@
 # Changelog
 All notable changes to this project are documented in this file.
-## [1.6.0] - ...
+## [1.7.0] - ...
 - Add AI Quick Reference documentation, bug replay script, model tests, and bug reporter
 
 - Created AI Quick Reference documentation in docs/AI_REFERENCE.md for quick lookup of data model attributes, function locations, and common task recipes.

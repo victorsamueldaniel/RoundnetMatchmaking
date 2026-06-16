@@ -1,4 +1,11 @@
 
+# Version 1.7.0
+## What's new?
+- **AI Quick Reference** — a new `docs/AI_REFERENCE.md` document gives a quick lookup of data model attributes, function locations, and common task recipes for contributors and AI tools.
+- **Bug replay script** — `scripts/replay_bug.py` makes it easy to reproduce a reported bug by setting up the right environment and launching the app straight to the failing state.
+- **Bug reporter** — a new tool (`ui/functions/bug_reporter.py`) packages up logs, preferences, and session data into a report to make bug investigations faster.
+- **Model helper tests** — added tests covering `compute_session_score`, `reorder_rounds`, `GameOfFour`, and `TeamOfTwo`.
+
 # Version 1.6.0 — May 14, 2026
 ## What's new?
 - **Load an old session** — a new 📂 Load Session button on the main screen lets you pick any `.pkl` file from a past session. The Games Editor, Session Games view, and plots all open exactly as they would after generating a new session.

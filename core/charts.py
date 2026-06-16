@@ -140,7 +140,7 @@ def plot_happiness_charts(
 
     # Create boxplot
     bp = ax3.boxplot(
-        box_data, labels=box_labels, patch_artist=True, showmeans=True, meanline=True
+        box_data, tick_labels=box_labels, patch_artist=True, showmeans=True, meanline=True
     )
 
     # Color the boxes
@@ -754,7 +754,7 @@ def plot_spectrum_analysis(
             box_data.append(happiness_list)
             box_labels.append(f"{spectrum}\n(n={len(happiness_list)})")
 
-    bp = ax2.boxplot(box_data, labels=box_labels, patch_artist=True)
+    bp = ax2.boxplot(box_data, tick_labels=box_labels, patch_artist=True)
 
     # Color boxes
     colors = plt.cm.Set3(np.linspace(0, 1, len(bp["boxes"])))
