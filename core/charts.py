@@ -6,6 +6,7 @@ from collections import defaultdict
 import re
 
 import matplotlib
+import matplotlib.lines as mlines
 
 matplotlib.use("Agg")
 
@@ -174,8 +175,8 @@ def plot_happiness_charts(
         "#ff7f0e",
         "#2ca02c",
         "#d62728",
-        "#9467bd",
-        "#8c564b",
+        "#ad8bcc",
+        "#39231f",
     ]
     _evo_styles = [
         {"linestyle": "-", "marker": None},  # solid
@@ -228,7 +229,7 @@ def plot_happiness_charts(
             label=player.name,
             color=color,
             alpha=0.8,
-            linewidth=1.8,
+            linewidth=4,
             markersize=6 if style["marker"] else 0,
         )
         legend_lines_evo.append(line)
@@ -236,12 +237,29 @@ def plot_happiness_charts(
     ax4.set_title("Happiness Evolution by Round", fontsize=14, fontweight="bold")
     ax4.set_xlabel("Round Number")
     ax4.set_ylabel("Cumulative Happiness")
-    # Legend in alphabetical order (players already sorted)
+    # Legend in alphabetical order (players already sorted).
+    # Build custom handles so linestyle patterns (e.g. dash-dot) are clearly visible.
+    legend_handles_evo = [
+        mlines.Line2D(
+            [0],
+            [0],
+            color=line.get_color(),
+            linewidth=line.get_linewidth(),
+            linestyle=line.get_linestyle(),
+            marker=line.get_marker(),
+            markersize=line.get_markersize(),
+            alpha=line.get_alpha(),
+            label=line.get_label(),
+        )
+        for line in legend_lines_evo
+    ]
     ax4.legend(
-        handles=legend_lines_evo,
+        handles=legend_handles_evo,
+        labels=[h.get_label() for h in legend_handles_evo],
         bbox_to_anchor=(1.05, 1),
         loc="upper left",
         fontsize=8,
+        handlelength=5,
     )
     ax4.grid(alpha=0.3)
 
