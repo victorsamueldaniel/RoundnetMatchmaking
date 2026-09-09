@@ -170,6 +170,53 @@ class ContactTabMixin:
         for c in range(3):
             card.grid_columnconfigure(c, weight=1)
 
+        # ── Bug report section ─────────────────────────────────────────
+        bug_section = tk.Frame(card_outer, bg=bg)
+        bug_section.place(relx=0.5, rely=0.72, anchor=tk.CENTER)
+
+        tk.Frame(
+            bug_section, bg=colors.get("accent_yellow", "#FED403"), height=1, width=340
+        ).pack(fill=tk.X, pady=(0, 10))
+        tk.Label(
+            bug_section,
+            text="Found a bug?",
+            font=label_font,
+            fg=colors.get("text_dark", "#000000"),
+            bg=bg,
+        ).pack()
+        tk.Label(
+            bug_section,
+            text=(
+                "Click below to package the app log, session files, and settings\n"
+                "into a BUG/ folder. Attach that folder when opening a GitHub issue."
+            ),
+            font=value_font,
+            fg=colors.get("text_dark", "#000000"),
+            bg=bg,
+            justify=tk.CENTER,
+        ).pack(pady=(4, 10))
+
+        def _on_create_bug_report():
+            try:
+                from ui.functions.bug_reporter import (
+                    collect_bug_report,
+                )  # noqa: PLC0415
+
+                pkg_dir = collect_bug_report(self)
+                messagebox.showinfo(
+                    "Bug Report Created",
+                    f"Bug report saved to:\n{pkg_dir}\n\n"
+                    "Please attach this folder when opening a GitHub issue.",
+                )
+            except Exception as exc:
+                messagebox.showerror("Bug Report Failed", str(exc))
+
+        ttk.Button(
+            bug_section,
+            text="Create Bug Report",
+            command=_on_create_bug_report,
+        ).pack()
+
         # Keep Contact as the last tab and paint its tab area in black.
         self._configure_contact_tab_behavior()
         self._ensure_contact_tab_last()

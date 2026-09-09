@@ -72,6 +72,9 @@ class SessionGenerationTabMixin:
         self.selected_players = []
         self.player_overrides = {}
         self.preferred_pairs = []  # list of (frozenset({name1, name2}), forced_games)
+        self._active_session_folder = (
+            None  # path to the currently active session folder
+        )
         self.png_show_levels_var = tk.BooleanVar(value=False)
         self._tooltip_window = None
         self._tooltip_after_id = None
@@ -157,7 +160,7 @@ class SessionGenerationTabMixin:
         button_frame = tk.Frame(session_tab, bg=self.colors["bg_dark"])
         button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=15, padx=20)
         button_frame.grid_columnconfigure(0, weight=1)
-        button_frame.grid_columnconfigure(5, weight=1)
+        button_frame.grid_columnconfigure(6, weight=1)
 
         # Custom button style
         btn_config = {
@@ -219,6 +222,21 @@ class SessionGenerationTabMixin:
             pady=12,
         )
         self.run_btn.grid(row=0, column=4, padx=10)
+
+        # Load existing session button
+        self.load_session_btn = tk.Button(
+            button_frame,
+            text="\U0001f4c2 Load Session",
+            command=self._load_existing_session,
+            bg="#555555",
+            fg=self.colors["text_light"],
+            font=self.fonts["normal_bold"],
+            relief=tk.FLAT,
+            cursor="hand2",
+            padx=20,
+            pady=12,
+        )
+        self.load_session_btn.grid(row=0, column=5, padx=10)
 
         # Create vertical PanedWindow to separate main content from preferences
         vertical_paned = tk.PanedWindow(
@@ -779,6 +797,23 @@ class SessionGenerationTabMixin:
         self.spectrum_buttons = {"on": spectrum_on_btn, "off": spectrum_off_btn}
         self.update_spectrum_switch_display()
 
+        # Source indicator: shown when parameters are restored from a loaded pkl
+        self.session_source_frame = tk.Frame(
+            params_scrollable_frame, bg="#e8f4e8", bd=1, relief=tk.RIDGE
+        )
+        self.session_source_label = tk.Label(
+            self.session_source_frame,
+            text="",
+            font=self.fonts["small"],
+            bg="#e8f4e8",
+            fg="#2a6e2a",
+            anchor=tk.W,
+            padx=6,
+            pady=3,
+        )
+        self.session_source_label.pack(fill=tk.X)
+        # Hidden until a session is loaded (not packed yet)
+
         # Configure grid weights
         root.columnconfigure(0, weight=1)
         root.rowconfigure(0, weight=1)
@@ -910,6 +945,9 @@ class SessionGenerationTabMixin:
         self.root.after(150, lambda: self.refresh_layout_for_current_screen(force=True))
         # Second pass after the window manager has fully settled the maximized layout
         self.root.after(800, self._schedule_player_button_font_fit)
+
+        # Load and apply saved UI preferences, then wire auto-save traces.
+        self._load_and_apply_preferences()
 
         # Contact tab is available on startup and should stay as the last tab.
         if hasattr(self, "show_contact_tab"):
@@ -1465,6 +1503,36 @@ class SessionGenerationTabMixin:
 
     def create_round_preferences(self):
         """Create or recreate the round preference controls based on num_rounds_var"""
+        # Snapshot current values BEFORE clearing so increase/decrease_rounds preserves them.
+        # One-time overrides from _apply_ui_preferences take priority over the live snapshot.
+        if getattr(self, "_pref_round_types", []):
+            _prev_types = list(self._pref_round_types)
+        else:
+            _prev_types = [v.get() for v in self.type_prefs]
+
+        if getattr(self, "_pref_round_genders", []):
+            _prev_genders = list(self._pref_round_genders)
+        else:
+            _prev_genders = [v.get() for v in self.gender_prefs]
+
+        # For rounds beyond the current count, fall back to the temp file so that
+        # adding a round via "+" picks up whatever was last saved there.
+        _temp_types: list = []
+        _temp_genders: list = []
+        if getattr(self, "_prefs_traces_active", False):
+            try:
+                from ui.functions.preferences_manager import (
+                    _UI_TEMP,
+                    _UI_DEFAULTS,
+                    _read_json,
+                )
+
+                _temp = _read_json(_UI_TEMP, _UI_DEFAULTS)
+                _temp_types = _temp.get("round_type_preferences", [])
+                _temp_genders = _temp.get("round_gender_preferences", [])
+            except Exception:
+                pass
+
         # Clear existing round frames
         for frame in self.round_frames:
             frame.destroy()
@@ -1476,7 +1544,7 @@ class SessionGenerationTabMixin:
 
         num_rounds = self.num_rounds_var.get()
 
-        # Default preferences (cycle through these for any number of rounds)
+        # Hardcoded cycle fallback for when neither snapshot nor temp has a value.
         type_defaults = ["balanced", "balanced", "level", "level"]
         gender_defaults = ["open", "mixed", "mixed", "open"]
 
@@ -1499,7 +1567,13 @@ class SessionGenerationTabMixin:
             round_label.grid(row=0, column=0, padx=5, sticky=tk.W)
 
             # Type preference
-            type_var = tk.StringVar(value=type_defaults[i % len(type_defaults)])
+            if i < len(_prev_types):
+                _type_val = _prev_types[i]
+            elif i < len(_temp_types):
+                _type_val = _temp_types[i]
+            else:
+                _type_val = type_defaults[i % len(type_defaults)]
+            type_var = tk.StringVar(value=_type_val)
             self.type_prefs.append(type_var)
             type_section, type_buttons = self._make_toggle_group(
                 round_frame, "#E8F4F8", "Type:", ["level", "balanced"], type_var
@@ -1508,13 +1582,26 @@ class SessionGenerationTabMixin:
             self.type_buttons_list.append(type_buttons)
 
             # Gender preference
-            gender_var = tk.StringVar(value=gender_defaults[i % len(gender_defaults)])
+            if i < len(_prev_genders):
+                _gender_val = _prev_genders[i]
+            elif i < len(_temp_genders):
+                _gender_val = _temp_genders[i]
+            else:
+                _gender_val = gender_defaults[i % len(gender_defaults)]
+            gender_var = tk.StringVar(value=_gender_val)
             self.gender_prefs.append(gender_var)
             gender_section, gender_buttons = self._make_toggle_group(
                 round_frame, "#F8E8F4", "Gender:", ["open", "mixed"], gender_var
             )
             gender_section.grid(row=0, column=2, padx=10, sticky=tk.W)
             self.gender_buttons_list.append(gender_buttons)
+
+        # Clear one-time overrides now that vars have been built from them.
+        self._pref_round_types = []
+        self._pref_round_genders = []
+        # Re-attach auto-save traces after rebuild if preferences are active.
+        if getattr(self, "_prefs_traces_active", False):
+            self._trace_round_pref_vars()
 
     def toggle_spectrum_switch(self):
         """Toggle Spectrum parameter ON/OFF"""
@@ -1593,6 +1680,12 @@ class SessionGenerationTabMixin:
         # Update count label and info display
         self._update_count_label()
         self.update_info_display()
+        try:
+            from ui.functions.preferences_manager import update_ui_temp
+
+            update_ui_temp(self._collect_ui_all_tracked())
+        except Exception:
+            pass
 
     def _update_count_label(self):
         """Update the count label with total, male and female counts."""
@@ -1687,7 +1780,12 @@ class SessionGenerationTabMixin:
             # Fallback to raw counts if quantile computation fails
             self.info_text.insert(tk.END, "Could not compute quantiles for levels\n")
 
-        self.info_text.insert(tk.END, f"Avg Level: {selected_df['Level'].mean():.2f}\n")
+        self.info_text.insert(
+            tk.END, f"Median Level: {selected_df['Level'].median():.2f}\n"
+        )
+        self.info_text.insert(
+            tk.END, f"Average Level: {selected_df['Level'].mean():.2f}\n"
+        )
         self.info_text.insert(tk.END, "=" * 40 + "\n\n")
 
         # Display each player AFTER level distribution
@@ -2051,6 +2149,12 @@ class SessionGenerationTabMixin:
             # Commit working copy back to the app state
             self.preferred_pairs = list(pairs_working)
             self._update_pairs_count_label()
+            try:
+                from ui.functions.preferences_manager import update_ui_temp
+
+                update_ui_temp(self._collect_ui_all_tracked())
+            except Exception:
+                pass
             win.destroy()
 
         add_1_btn.config(command=lambda: _on_add(1))
@@ -2543,6 +2647,370 @@ class SessionGenerationTabMixin:
         self._update_count_label()
         self.update_info_display()
 
+    # ------------------------------------------------------------------
+    # Preferences persistence
+    # ------------------------------------------------------------------
+
+    def _collect_ui_default_saved(self):
+        """Snapshot current values of every default-saved UI preference field."""
+        try:
+            lambda_w = float(self.lambda_weight_var.get())
+        except Exception:
+            lambda_w = 2.0
+        try:
+            pct = int(self.percentile_var.get())
+        except Exception:
+            pct = 33
+        try:
+            lgt = float(self.level_gap_tol_var.get())
+        except Exception:
+            lgt = 1.1
+        try:
+            nr = int(self.num_rounds_var.get())
+        except Exception:
+            nr = 4
+        return {
+            "num_rounds": nr,
+            "games_per_round": self.games_per_round_var.get(),
+            "level_gap_tol": lgt,
+            "lambda_weight": lambda_w,
+            "percentile": pct,
+            "spectrum_enabled": bool(self.spectrum_var.get()),
+            "round_type_preferences": [v.get() for v in self.type_prefs],
+            "round_gender_preferences": [v.get() for v in self.gender_prefs],
+        }
+
+    def _collect_ui_all_tracked(self):
+        """Snapshot all tracked UI preferences (default-saved + default-not-saved)."""
+        from ui.functions.preferences_manager import serialize_preferred_pairs
+
+        data = self._collect_ui_default_saved()
+        data["selected_players"] = list(self.selected_players)
+        try:
+            data["female_boost"] = float(self.female_boost_var.get())
+        except Exception:
+            data["female_boost"] = 0.0
+        data["preferred_pairs"] = serialize_preferred_pairs(self.preferred_pairs)
+        return data
+
+    def _on_auto_save_change(self, *_args):
+        """Trace callback: silently auto-save default-saved preferences."""
+        try:
+            from ui.functions.preferences_manager import (
+                save_ui_default_saved,
+                update_ui_temp,
+            )
+
+            save_ui_default_saved(self._collect_ui_default_saved())
+            update_ui_temp(self._collect_ui_all_tracked())
+        except Exception:
+            pass
+
+    def _trace_round_pref_vars(self):
+        """Attach auto-save traces to all current round-preference variables."""
+        for var in self.type_prefs + self.gender_prefs:
+            var.trace_add("write", self._on_auto_save_change)
+
+    def _apply_ui_preferences(self, prefs):
+        """Apply a loaded preferences dict to all UI controls."""
+        from ui.functions.preferences_manager import deserialize_preferred_pairs
+
+        # Store round prefs as one-time overrides for create_round_preferences.
+        self._pref_round_types = prefs.get("round_type_preferences", [])
+        self._pref_round_genders = prefs.get("round_gender_preferences", [])
+
+        # Rebuild round rows with the saved count and type/gender values.
+        num_rounds = prefs.get("num_rounds", 4)
+        self.num_rounds_var.set(num_rounds)
+        if hasattr(self, "rounds_label"):
+            self.rounds_label.config(text=str(num_rounds))
+        self.create_round_preferences()
+
+        # Scalar parameters.
+        self.games_per_round_var.set(prefs.get("games_per_round", "auto"))
+        self.level_gap_tol_var.set(prefs.get("level_gap_tol", 1.1))
+        self.lambda_weight_var.set(prefs.get("lambda_weight", 2.0))
+        self.percentile_var.set(prefs.get("percentile", 33))
+        self.set_spectrum_state(prefs.get("spectrum_enabled", True))
+
+        # Default-not-saved: restore only when present in stable (user previously confirmed).
+        if "selected_players" in prefs:
+            for name in list(prefs["selected_players"]):
+                if name in self.player_buttons and not self.player_button_states.get(
+                    name, False
+                ):
+                    self.toggle_player(name)
+
+        if "female_boost" in prefs:
+            try:
+                self.female_boost_var.set(float(prefs["female_boost"]))
+            except (TypeError, ValueError):
+                pass
+
+        if "preferred_pairs" in prefs and prefs["preferred_pairs"]:
+            try:
+                self.preferred_pairs = deserialize_preferred_pairs(
+                    prefs["preferred_pairs"]
+                )
+                self._update_pairs_count_label()
+            except Exception:
+                pass
+
+    def _load_and_apply_preferences(self):
+        """Load stable preferences, apply to controls, then wire auto-save traces."""
+        from ui.functions.preferences_manager import (
+            ensure_preferences_exist,
+            load_ui_preferences,
+            load_extra_preferences,
+            update_ui_temp,
+        )
+
+        ensure_preferences_exist()
+        prefs = load_ui_preferences()
+        self._extra_prefs = load_extra_preferences()
+        self._apply_ui_preferences(prefs)
+
+        # Snapshot the not-saved keys immediately after load so we can detect
+        # changes the user makes THIS session (compare at close vs startup state).
+        from ui.functions.preferences_manager import UI_DEFAULT_NOT_SAVED_KEYS
+
+        _snap_all = self._collect_ui_all_tracked()
+        self._initial_not_saved = {
+            k: _snap_all.get(k) for k in UI_DEFAULT_NOT_SAVED_KEYS
+        }
+
+        # Auto-save traces for scalar default-saved variables.
+        for _var in (
+            self.num_rounds_var,
+            self.games_per_round_var,
+            self.level_gap_tol_var,
+            self.lambda_weight_var,
+            self.percentile_var,
+            self.spectrum_var,
+            self.female_boost_var,
+        ):
+            _var.trace_add("write", self._on_auto_save_change)
+
+        # Mark active so create_round_preferences re-attaches traces on rebuild.
+        self._prefs_traces_active = True
+        self._trace_round_pref_vars()
+
+        # Initialise temp file with current full state.
+        try:
+            update_ui_temp(self._collect_ui_all_tracked())
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------ #
+    #  Declarative parameter map for _apply_session_params.               #
+    #  Each entry: (session_attr, ui_var_name, transform_fn)              #
+    #  Add a new row here whenever a session attribute gains a UI widget. #
+    # ------------------------------------------------------------------ #
+    _SESSION_PARAM_MAP = [
+        ("_objective_lambda_weight", "lambda_weight_var", float),
+        ("_objective_percentile", "percentile_var", int),
+        ("level_gap_tol", "level_gap_tol_var", float),
+        ("_female_boost", "female_boost_var", float),
+    ]
+
+    def _apply_session_params(self, session, source_name=None):
+        """Restore all UI parameters from *session*.
+
+        The declarative _SESSION_PARAM_MAP above is the single place to
+        register new simple scalar parameter bindings. Composite cases
+        (spectrum, games-per-round, round rows) are handled just below it.
+        """
+        # --- Simple scalar vars (map-driven) ---
+        for attr, var_name, transform in self._SESSION_PARAM_MAP:
+            value = getattr(session, attr, None)
+            if value is not None:
+                try:
+                    getattr(self, var_name).set(
+                        transform(value) if transform else value
+                    )
+                except Exception as exc:
+                    print(
+                        f"[_apply_session_params] Could not restore {var_name}: {exc}"
+                    )
+
+        # --- Spectrum (requires visual toggle update) ---
+        spectrum_val = getattr(session, "spectrum", None)
+        if spectrum_val is not None:
+            try:
+                self.set_spectrum_state(bool(spectrum_val))
+            except Exception as exc:
+                print(f"[_apply_session_params] Could not restore spectrum: {exc}")
+
+        # --- Games per round ---
+        games_list = getattr(session, "games_per_round_each_round", None)
+        if games_list:
+            try:
+                unique = set(games_list)
+                self.games_per_round_var.set(
+                    str(next(iter(unique))) if len(unique) == 1 else "auto"
+                )
+            except Exception as exc:
+                print(
+                    f"[_apply_session_params] Could not restore games_per_round: {exc}"
+                )
+
+        # --- Number of rounds + per-round type/gender (rebuilds round rows) ---
+        n_rounds = getattr(session, "amount_of_rounds", None)
+        if n_rounds:
+            try:
+                self._pref_round_types = list(
+                    getattr(session, "type_preferences", []) or []
+                )
+                self._pref_round_genders = list(
+                    getattr(session, "gender_preferences", []) or []
+                )
+                self.num_rounds_var.set(n_rounds)
+                if hasattr(self, "rounds_label"):
+                    self.rounds_label.config(text=str(n_rounds))
+                self.create_round_preferences()
+            except Exception as exc:
+                print(f"[_apply_session_params] Could not restore round prefs: {exc}")
+
+        # --- Source indicator banner ---
+        if hasattr(self, "session_source_frame"):
+            if source_name:
+                self.session_source_label.config(
+                    text=f"\U0001f4cc Parameters loaded from: {source_name}"
+                )
+                self.session_source_frame.pack(fill=tk.X, padx=4, pady=(0, 4))
+            else:
+                self.session_source_frame.pack_forget()
+
+    def _load_existing_session(self):
+        """Load a previously saved session from a .pkl file."""
+        from tkinter import filedialog  # noqa: PLC0415
+        from core.pickle_helper import load_session  # noqa: PLC0415
+        from core.charts import (  # noqa: PLC0415
+            create_session_games_png,
+            create_session_games_round_images,
+        )
+
+        sessions_dir = os.path.join(os.getcwd(), "sessions")
+        if not os.path.exists(sessions_dir):
+            sessions_dir = os.getcwd()
+
+        pkl_path = filedialog.askopenfilename(
+            title="Load Session",
+            initialdir=sessions_dir,
+            filetypes=[("Pickle files", "*.pkl"), ("All files", "*.*")],
+        )
+        if not pkl_path:
+            return  # user cancelled
+
+        # Disable both action buttons while loading to prevent double-clicks
+        self.run_btn.config(state=tk.DISABLED)
+        self.load_session_btn.config(state=tk.DISABLED)
+
+        try:
+            import datetime  # noqa: PLC0415
+            import shutil  # noqa: PLC0415
+
+            print(f"\nLoading session from: {pkl_path}")
+            session = load_session(pkl_path)
+
+            # Stamp objective metadata if absent (legacy pkls)
+            if not getattr(session, "_objective_function_name", None):
+                session._objective_function_name = "mean_min_max_happiness_objective"
+            if getattr(session, "_objective_lambda_weight", None) is None:
+                session._objective_lambda_weight = 2.4
+            if getattr(session, "_objective_percentile", None) is None:
+                session._objective_percentile = 10
+
+            self.session_of_rounds = session
+
+            # Sync player button selection to the loaded session's players
+            session_player_names = {p.name for p in session.players}
+            self.clear_selection()
+            for player_name in self.player_buttons:
+                if player_name in session_player_names:
+                    self.player_button_states[player_name] = True
+                    self.player_buttons[player_name].config(
+                        bg=self.colors["accent_yellow"],
+                        fg=self.colors["text_dark"],
+                        relief=tk.SUNKEN,
+                    )
+                    self.selected_players.append(player_name)
+            self._update_count_label()
+            self.update_info_display()
+
+            # Restore all session parameters into the UI widgets
+            self._apply_session_params(session, source_name=os.path.basename(pkl_path))
+
+            # --- Create a fresh working folder for today so the original is untouched ---
+            date_str = datetime.datetime.now().strftime("%d_%m_%Y")
+            new_folder = os.path.join("sessions", date_str)
+            counter = 2
+            while os.path.exists(new_folder):
+                new_folder = os.path.join("sessions", f"{date_str}_{counter}")
+                counter += 1
+            os.makedirs(new_folder, exist_ok=True)
+            print(f"  Working folder: {new_folder}")
+
+            # Copy the base pkl into the new folder as the canonical starting point
+            base_pkl_filename = f"session_of_rounds_{date_str}.pkl"
+            new_pkl_path = os.path.join(new_folder, base_pkl_filename)
+            shutil.copy2(pkl_path, new_pkl_path)
+
+            # Copy plots directory if it exists in the source folder
+            source_folder = os.path.dirname(os.path.abspath(pkl_path))
+            source_plots = os.path.join(source_folder, "plots")
+            new_plots_dir = os.path.join(new_folder, "plots")
+            if os.path.isdir(source_plots):
+                shutil.copytree(source_plots, new_plots_dir)
+
+            self._active_session_folder = new_folder
+            # Tell show_games_editor() which file is the baseline for score history
+            self._loaded_pkl_path = new_pkl_path
+
+            print("Session loaded successfully!")
+            print(f"  Players: {len(session.players)}")
+            print(f"  Rounds: {len(session.rounds)}")
+
+            # Regenerate session games PNG for the UI
+            session_games_png = os.path.join(new_folder, "session_games.png")
+            _round_imgs = []
+            try:
+                create_session_games_png(
+                    session,
+                    session_games_png,
+                    show_levels=self.png_show_levels_var.get(),
+                )
+                _round_imgs = create_session_games_round_images(
+                    session,
+                    show_levels=self.png_show_levels_var.get(),
+                )
+            except Exception as png_err:
+                print(f"Warning: Could not generate session games PNG: {png_err}")
+                session_games_png = None
+
+            # Open the same tabs as after generation, but keep focus on Session Generation
+            self.show_games_editor()
+            self.main_notebook.select(self.session_tab)
+            if session_games_png and os.path.exists(session_games_png):
+                self.show_session_games_tab(session_games_png, round_images=_round_imgs)
+            if os.path.exists(new_plots_dir):
+                self.show_plots_window(new_plots_dir)
+
+            print("\n" + "=" * 80)
+            print("Session loaded and editor opened!")
+            print("=" * 80)
+
+        except Exception as e:
+            import traceback  # noqa: PLC0415
+
+            print(f"Error loading session: {e}")
+            traceback.print_exc()
+            messagebox.showerror("Load Failed", f"Could not load session:\n\n{str(e)}")
+        finally:
+            # Re-enable both action buttons regardless of success or failure
+            self.run_btn.config(state=tk.NORMAL)
+            self.load_session_btn.config(state=tk.NORMAL)
+
     def run_session(self):
         """Run session generation with selected players"""
         if len(self.selected_players) < 4:
@@ -2593,6 +3061,7 @@ class SessionGenerationTabMixin:
                 .isin(["female", "f"])
             )
             if female_mask.any():
+                sub_df["Level"] = sub_df["Level"].astype(float)
                 boosted_levels = pd.to_numeric(
                     sub_df.loc[female_mask, "Level"], errors="coerce"
                 ).fillna(0)
@@ -2601,6 +3070,7 @@ class SessionGenerationTabMixin:
                 ).round(1)
 
                 if "Category" in sub_df.columns:
+                    sub_df["Category"] = sub_df["Category"].astype(float)
                     boosted_categories = pd.to_numeric(
                         sub_df.loc[female_mask, "Category"], errors="coerce"
                     ).fillna(0)
@@ -2623,9 +3093,20 @@ class SessionGenerationTabMixin:
         else:
             games_per_round = int(games_per_round_setting)
 
-        # Parameters for seed optimization
-        first_seed = 0
-        last_seed = 9
+        # Parameters for seed optimization — read fresh from temp file so that
+        # in-session edits to extra_parameters_temp.json are picked up without restart.
+        from ui.functions.preferences_manager import (
+            load_extra_preferences_temp,
+        )  # noqa: PLC0415
+
+        _ep = load_extra_preferences_temp()
+        first_seed = _ep.get("first_seed", 0)
+        last_seed = _ep.get("last_seed", 9)
+        num_iter = _ep.get("num_iter", 435)
+        weight_same_teammate = _ep.get("weight_same_teammate", 5)
+        never_met_bonus_per_player = _ep.get("never_met_bonus_per_player", 2)
+        never_met_bonus_cap = _ep.get("never_met_bonus_cap", 4)
+        print_progress = _ep.get("print_progress", True)
 
         # Parameters from UI
         try:
@@ -2663,6 +3144,13 @@ class SessionGenerationTabMixin:
             percentile,
             spectrum_enabled,
             self.preferred_pairs,
+            num_iter=num_iter,
+            weight_same_teammate=weight_same_teammate,
+            never_met_bonus_per_player=never_met_bonus_per_player,
+            never_met_bonus_cap=never_met_bonus_cap,
+            extra_parameters=_ep,
+            print_progress=print_progress,
+            female_shift=female_shift,
         )
 
     def run_generation_with_progress(
@@ -2680,6 +3168,13 @@ class SessionGenerationTabMixin:
         percentile,
         spectrum_enabled,
         preferred_pairs=None,
+        num_iter=435,
+        weight_same_teammate=5,
+        never_met_bonus_per_player=2,
+        never_met_bonus_cap=4,
+        extra_parameters=None,
+        print_progress=True,
+        female_shift=0.0,
     ):
         """Run session generation with progress updates."""
         try:
@@ -2713,27 +3208,45 @@ class SessionGenerationTabMixin:
                     gender_preferences=gender_preferences,
                     rounds_reordering=rounds_reordering,
                     level_gap_tol=level_gap_tol,
-                    num_iter=435,
+                    num_iter=num_iter,
                     lambda_weight=lambda_weight,
                     objective_function=lambda x: main_module.mean_min_max_happiness_objective(
                         x, lambda_weight=lambda_weight, percentile=percentile
                     ),
-                    weight_same_teammate=5,
+                    weight_same_teammate=weight_same_teammate,
+                    never_met_bonus_per_player=never_met_bonus_per_player,
+                    never_met_bonus_cap=never_met_bonus_cap,
+                    extra_parameters=extra_parameters,
                     first_seed=first_seed,
                     last_seed=last_seed,
                     spectrum=spectrum_enabled,
                     games_per_round_each_round=games_per_round,
-                    print_progress=True,
+                    print_progress=print_progress,
                     progress_callback=progress_dialog.update_progress,
                 )
             )
 
             # Apply preferred-pairs post-processing
             if preferred_pairs:
+                _extra = extra_parameters or {}
+                _post_cfg = _extra.get("post_processing", {})
+                _fpps_cfg = _post_cfg.get("force_preferred_pairs_in_session", {})
+                try:
+                    _forced_games_default = int(
+                        _fpps_cfg.get("forced_games_default", 1)
+                    )
+                except (TypeError, ValueError):
+                    _forced_games_default = 1
+                try:
+                    _score_tolerance = float(_fpps_cfg.get("score_tolerance", 0.10))
+                except (TypeError, ValueError):
+                    _score_tolerance = 0.10
                 main_module.force_preferred_pairs_in_session(
                     session_of_rounds,
                     preferred_pairs,
+                    forced_games=_forced_games_default,
                     lambda_weight=lambda_weight,
+                    score_tolerance=_score_tolerance,
                 )
                 main_module.apply_preferred_pairs_happiness(
                     session_of_rounds,
@@ -2763,6 +3276,7 @@ class SessionGenerationTabMixin:
                 "mean_min_max_happiness_objective"
             )
             session_of_rounds._objective_percentile = percentile
+            session_of_rounds._female_boost = female_shift
 
             # Save the session using save_session_of_rounds with default parameters
             try:
@@ -2791,6 +3305,7 @@ class SessionGenerationTabMixin:
                     # Get the most recently modified one
                     if folders_with_plots:
                         most_recent = max(folders_with_plots, key=os.path.getmtime)
+                        self._active_session_folder = most_recent
                         plots_dir = os.path.join(most_recent, "plots")
 
                         # Generate and show the Session Games overview PNG
@@ -2840,6 +3355,7 @@ class SessionGenerationTabMixin:
                         ]
                         if session_folders:
                             most_recent = max(session_folders, key=os.path.getmtime)
+                            self._active_session_folder = most_recent
                             plots_dir = os.path.join(most_recent, "plots")
                             if os.path.exists(plots_dir):
                                 self.show_games_editor()

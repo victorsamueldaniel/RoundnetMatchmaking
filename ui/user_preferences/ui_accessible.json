@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "num_rounds": 4,
+  "games_per_round": "auto",
+  "level_gap_tol": 1.2,
+  "lambda_weight": 2.4,
+  "percentile": 10,
+  "spectrum_enabled": true,
+  "round_type_preferences": [
+    "balanced",
+    "balanced",
+    "level",
+    "level"
+  ],
+  "round_gender_preferences": [
+    "mixed",
+    "mixed",
+    "mixed",
+    "open"
+  ],
+  "preferred_pairs": [
+    {
+      "players": [
+        "Enzo",
+        "VictorDa"
+      ],
+      "forced_games": 1
+    },
+    {
+      "players": [
+        "+1_Fede",
+        "Federico"
+      ],
+      "forced_games": 1
+    },
+    {
+      "players": [
+        "Colin",
+        "Leila"
+      ],
+      "forced_games": 1
+    }
+  ],
+  "female_boost": 0.0,
+  "selected_players": [
+    "+1_Fede",
+    "Angela",
+    "Colin",
+    "Elise",
+    "Enzo",
+    "Federico",
+    "Félix",
+    "Leila",
+    "Manon",
+    "Sarah",
+    "Timothée",
+    "VictorDa"
+  ]
+}

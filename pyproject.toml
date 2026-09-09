@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "roundnet-matchmaking"
-version = "1.3.0"
+version = "1.6.0"
 description = "Desktop roundnet matchmaking and session generation tool"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -62,8 +62,3 @@ ui = ["*.png", "*.ico"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
-# tests_fine_tuning.py is a script-style file with no test functions and
-# requires real .xlsx data — excluded from pytest collection
-collect_ignore = [
-    "tests/tests_fine_tuning.py",
-]

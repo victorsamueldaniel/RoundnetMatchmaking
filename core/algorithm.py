@@ -51,6 +51,7 @@ def run_session_generation_with_seed_optimization(
     spectrum=True,
     games_per_round_each_round=None,
     objective_function=None,
+    extra_parameters=None,
     print_progress=True,
     print_all_happiness=False,
     progress_callback=None,
@@ -159,6 +160,7 @@ def run_session_generation_with_seed_optimization(
             "spectrum": spectrum,
             "rounds_reordering": rounds_reordering,
             "gender_preferences": gender_preferences,
+            "extra_parameters": extra_parameters,
         }
 
         if games_per_round_each_round is not None:

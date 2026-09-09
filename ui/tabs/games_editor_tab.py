@@ -9,6 +9,26 @@ from ui.functions.tab_functions import games_editor_delta_to_bg
 
 main_module = None
 
+# Abbreviated spectrum names for player button middle lines.
+_SPEC_ABBREV = {
+    "Prey": "Prey",
+    "Hunter": "Hntr",
+    "Challenger": "Clgr",
+    "Classist": "Clst",
+    "Equilibrist": "Equl",
+    "Chill": "Chll",
+}
+
+# Maps spec key → player attribute name (mirrors core.models._SPEC_KEY_TO_ATTR).
+_SPEC_KEY_TO_ATTR = {
+    "Prey": "prey",
+    "Equilibrist": "equilibrist",
+    "Challenger": "challenger",
+    "Chill": "chill",
+    "Hunter": "hunter",
+    "Classist": "classist",
+}
+
 
 class GamesEditorTabMixin:
     def _ensure_games_editor_button_config(self):
@@ -116,6 +136,39 @@ class GamesEditorTabMixin:
             if player.name in over_benched_names:
                 return "over_benched_not_playing"
         return "default"
+
+    # ------------------------------------------------------------------
+    # Spectrum helpers
+    # ------------------------------------------------------------------
+
+    def _abbrev_spec(self, spec_name):
+        """Return the abbreviated spectrum name, or empty string if None."""
+        if not spec_name:
+            return ""
+        return _SPEC_ABBREV.get(spec_name, spec_name)
+
+    def _round_uses_spectrum(self, round_idx):
+        """Return True if the given round was run with spectrum=True."""
+        try:
+            return getattr(self.session_of_rounds.rounds[round_idx], "spectrum", False)
+        except Exception:
+            return False
+
+    def _baseline_spec_middle(self, player, round_idx, team_id):
+        """Return the committed spec abbreviation to use as the button middle line.
+
+        Returns None when spectrum is off for that round, or when the index is
+        missing (e.g. not_playing slot).
+        """
+        if team_id == "not_playing":
+            return None
+        if not self._round_uses_spectrum(round_idx):
+            return None
+        try:
+            spec = player.spec_chosen_history[round_idx]
+        except (IndexError, AttributeError):
+            return None
+        return self._abbrev_spec(spec) or None
 
     def _player_from_button_key(self, key):
         """Resolve current player object backing a stored games-editor button key."""
@@ -339,7 +392,29 @@ class GamesEditorTabMixin:
         _initial_score = _compute_session_score(
             self.session_of_rounds.players, _sess_obj_name, _sess_lw, _sess_pct
         )
-        self.score_history = [_initial_score]
+        # Find the baseline pkl path so score chips can link back to the saved file
+        _initial_pkl = getattr(self, "_loaded_pkl_path", None)
+        if hasattr(self, "_loaded_pkl_path"):
+            del self._loaded_pkl_path
+        if _initial_pkl is None:
+            _sf_init = getattr(self, "_active_session_folder", None)
+            if _sf_init and os.path.exists(_sf_init):
+                import re as _re_init  # noqa: PLC0415
+
+                _base_pkls = sorted(
+                    f
+                    for f in os.listdir(_sf_init)
+                    if f.endswith(".pkl")
+                    and not _re_init.search(r"_v\d+\.pkl$", f)
+                    and "_modified" not in f
+                )
+                if _base_pkls:
+                    _initial_pkl = os.path.join(_sf_init, _base_pkls[0])
+        self.score_history = [(_initial_score, _initial_pkl)]
+        # Restore previous history if a version-restore operation is in progress
+        if hasattr(self, "_pending_restore_history"):
+            self.score_history = self._pending_restore_history
+            del self._pending_restore_history
         # Store objective metadata for post-apply reuse; do NOT use live slider values
         # so the score stays tied to the generated session regardless of UI changes.
         self._score_obj_name = _sess_obj_name
@@ -695,10 +770,15 @@ class GamesEditorTabMixin:
             team_id,
             over_benched_names=over_benched_names,
         )
+        spec_middle = self._baseline_spec_middle(player, round_idx, team_id)
         bg, fg = self._resolve_button_colors(style_token=token)
         btn = tk.Button(
             parent,
-            text=self._format_player_button_text(player, middle_token=token),
+            text=self._format_player_button_text(
+                player,
+                middle_token=token,
+                middle_override=spec_middle,
+            ),
             font=getattr(self, "games_editor_player_button_font", self.fonts["small"]),
             bg=bg,
             fg=fg,
@@ -720,6 +800,11 @@ class GamesEditorTabMixin:
         # Also attach the player_info to the button for later refresh
         try:
             btn._player_info = player_info
+        except Exception:
+            pass
+        # Bind 1-second hover tooltip
+        try:
+            self._bind_player_hover_tooltip(btn, round_idx, game_idx, team_id)
         except Exception:
             pass
         return btn
@@ -807,11 +892,13 @@ class GamesEditorTabMixin:
                     team_id,
                     over_benched_names=over_benched_names,
                 )
+                spec_middle = self._baseline_spec_middle(player, round_idx, team_id)
                 self._apply_player_button_presentation(
                     btn,
                     player,
                     team_id,
                     middle_token=token,
+                    middle_override=spec_middle,
                 )
                 # use the correct player object
                 try:
@@ -947,6 +1034,11 @@ class GamesEditorTabMixin:
             else:
                 new_gains[p.name] = None
 
+        # ---- 4b. Capture simulated spec chosen per player ----
+        preview_specs = {
+            p.name: getattr(p, "last_spec_chosen", None) for p in all_players
+        }
+
         # ---- 4.5. Compute pair bonus deltas for this round ----
         # happiness_gained_history only tracks game-mechanics gains; the pair bonus
         # lives separately in player.happiness.  We compute its expected change here
@@ -1058,18 +1150,19 @@ class GamesEditorTabMixin:
             base_val = base_gain if base_gain is not None else 0.0
             deltas[name] = (new_val - base_val) + pair_bonus_deltas.get(name, 0)
 
-        return deltas
+        return deltas, preview_specs
 
     def _apply_happiness_preview_colors(self, round_idx):
         """Color all player buttons in round_idx based on simulated happiness delta."""
         if not hasattr(self, "game_player_buttons"):
             return
 
-        deltas = self._preview_happiness_delta(round_idx)
+        deltas, preview_specs = self._preview_happiness_delta(round_idx)
         if not deltas:
             return
 
         game_round = self.session_of_rounds.rounds[round_idx]
+        is_spectrum = getattr(game_round, "spectrum", False)
 
         over_benched_names = self._over_benched_not_playing_names()
 
@@ -1109,11 +1202,20 @@ class GamesEditorTabMixin:
                 else:
                     delta = deltas.get(player.name, 0.0)
                     bg, suffix = self._delta_to_bg(delta)
+                    if is_spectrum:
+                        sim_spec = preview_specs.get(player.name)
+                        abbrev = self._abbrev_spec(sim_spec)
+                        if suffix:
+                            middle = f"{abbrev} {suffix}".strip() if abbrev else suffix
+                        else:
+                            middle = abbrev or None
+                    else:
+                        middle = suffix
                     self._apply_player_button_presentation(
                         btn,
                         player,
                         team_id,
-                        middle_override=suffix,
+                        middle_override=middle,
                         bg_override=bg,
                     )
             except Exception:
@@ -1121,6 +1223,388 @@ class GamesEditorTabMixin:
 
         # Enforce global not-playing styles for matching names across all rounds.
         self._refresh_not_playing_button_styles()
+
+    # ------------------------------------------------------------------
+    # Hover tooltip infrastructure (steps 10-13)
+    # ------------------------------------------------------------------
+
+    def _bind_player_hover_tooltip(self, btn, round_idx, game_idx, team_id):
+        """Bind enter/leave events on a player button to show a 1-second hover tooltip."""
+        btn.bind(
+            "<Enter>",
+            lambda e: self._schedule_ge_tooltip(e, btn, round_idx, game_idx, team_id),
+        )
+        btn.bind("<Leave>", self.hide_tooltip)
+
+    def _schedule_ge_tooltip(self, event, btn, round_idx, game_idx, team_id):
+        """Cancel any pending tooltip and schedule a fresh one after 1 second."""
+        self.hide_tooltip()
+        delay = getattr(self, "_ge_tooltip_delay_ms", 500)
+        self._tooltip_after_id = self.root.after(
+            delay,
+            lambda: self._show_ge_tooltip(btn, round_idx, game_idx, team_id),
+        )
+
+    def _compute_tooltip_breakdown(self, player, round_idx, game_idx, team_id):
+        """Compute all happiness breakdown components from the live game state.
+
+        Returns a dict with keys:
+          is_spectrum, spec_breakdown, chosen_spec,
+          high_lvl_tmmt, high_lvl_opp,
+          same_tmmt_penalty, same_people_penalty, never_met_bonus,
+          gender_penalty, minority_bonus, above_median_bonus,
+          pair_bonus, total_gain
+        Or {'sitting_out': True} for not_playing players.
+        """
+        if team_id == "not_playing":
+            return {"sitting_out": True}
+
+        try:
+            game_round = self.session_of_rounds.rounds[round_idx]
+        except Exception:
+            return {"error": True}
+
+        # -- Resolve live game object by searching for the player (handles cross-game swaps) --
+        game = None
+        my_team = None
+        opp_team = None
+        for g in game_round.games:
+            if player in g.team_A.players_set:
+                game = g
+                my_team = g.team_A
+                opp_team = g.team_B
+                break
+            if player in g.team_B.players_set:
+                game = g
+                my_team = g.team_B
+                opp_team = g.team_A
+                break
+        if game is None:
+            return {"error": True}
+
+        is_spectrum = getattr(game_round, "spectrum", False)
+
+        teammates = [p for p in my_team.players if p is not player]
+        opponents = list(opp_team.players)
+        teammates_levels = [p.level for p in teammates]
+        opponents_levels = [p.level for p in opponents]
+        all_others = frozenset(p for p in game.participants if p is not player)
+
+        # -- Read params (with fallbacks matching update_happiness defaults) --
+        p = getattr(game_round, "_params", {})
+        weight = getattr(game_round, "weight_same_teammate", 5)
+        nmb_per_player = getattr(game_round, "never_met_bonus_per_player", 2)
+        nmb_cap = getattr(game_round, "never_met_bonus_cap", 4)
+        same_div = (
+            float(
+                p.get(
+                    "happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor",
+                    2,
+                )
+            )
+            or 2.0
+        )
+        level_gap_tol = getattr(game_round, "level_gap_tol", 0.5)
+        hl_mult = float(
+            p.get("non_spectrum_high_level_threshold_self_level_multiplier", 0.85)
+        )
+        gender_pen_spectrum = float(
+            p.get("happiness_penalty_gender_preference_not_satisfied_spectrum", 5)
+        )
+        gender_pen_non_spectrum = float(
+            p.get("happiness_penalty_gender_preference_not_satisfied_non_spectrum", 2)
+        )
+        minority_bonus_val = float(p.get("happiness_bonus_minority_gender_mixed", 1))
+        above_median_bonus_val = float(
+            p.get("happiness_bonus_above_median_level_type_level", 1)
+        )
+
+        # -- Is this round's happiness pending (swap not yet applied)? --
+        round_has_pending = any(
+            c["round_idx"] == round_idx for c in getattr(self, "pending_changes", [])
+        )
+
+        # -- Spectrum breakdown --
+        spec_breakdown = {}
+        chosen_spec = None
+        if is_spectrum:
+            import numpy as np  # noqa: PLC0415
+
+            teammates_mean = (
+                float(np.mean(teammates_levels)) if teammates_levels else player.level
+            )
+            team_mean = float(np.mean(teammates_levels + [player.level]))
+            opponents_mean = (
+                float(np.mean(opponents_levels)) if opponents_levels else player.level
+            )
+            prey_mult = float(
+                p.get("spectrum_prey_opponents_mean_level_multiplier", 0.7)
+            )
+            eq_mult = float(p.get("spectrum_equilibrist_level_gap_tol_multiplier", 0.5))
+            chal_opp_mult = float(
+                p.get("spectrum_challenger_opponents_mean_level_multiplier", 0.9)
+            )
+            chal_gap_mult = float(
+                p.get("spectrum_challenger_level_gap_tol_multiplier", 0.5)
+            )
+            chill_thresh = float(p.get("spectrum_chill_players_chill_threshold", 10))
+            clst_gap_mult = float(
+                p.get("spectrum_classist_level_gap_tol_multiplier", 0.5)
+            )
+            # count chill players in game (level <= chill_thresh)
+            players_chill = sum(
+                1 for pp in game.participants if pp.level <= chill_thresh
+            )
+            spectrum_triggered = {
+                "Prey": 1 if prey_mult * opponents_mean >= player.level else 0,
+                "Equilibrist": (
+                    1
+                    if abs(team_mean - opponents_mean) <= eq_mult * level_gap_tol
+                    else 0
+                ),
+                "Challenger": (
+                    1
+                    if abs(chal_opp_mult * opponents_mean - team_mean)
+                    <= chal_gap_mult * level_gap_tol
+                    else 0
+                ),
+                "Chill": 1 if players_chill >= chill_thresh else 0,
+                "Hunter": 1 if opponents_mean <= team_mean else 0,
+                "Classist": (
+                    1
+                    if abs(player.level - teammates_mean)
+                    <= clst_gap_mult * level_gap_tol
+                    else 0
+                ),
+            }
+            for spec_name, triggered in spectrum_triggered.items():
+                score = getattr(player, _SPEC_KEY_TO_ATTR[spec_name], 0) or 0
+                spec_breakdown[spec_name] = {
+                    "score": score,
+                    "triggered": bool(triggered),
+                    "gain": score * triggered,
+                }
+
+            # Determine chosen spec:
+            # - For committed rounds: read spec_chosen_history
+            # - For pending rounds: run simulation to get current spec
+            if not round_has_pending:
+                try:
+                    chosen_spec = player.spec_chosen_history[round_idx]
+                except (IndexError, AttributeError):
+                    chosen_spec = None
+            else:
+                # Quick simulation to get preview spec for this player
+                try:
+                    _, preview_specs = self._preview_happiness_delta(round_idx)
+                    chosen_spec = preview_specs.get(player.name)
+                except Exception:
+                    chosen_spec = None
+
+        # -- Non-spectrum breakdown --
+        high_lvl_tmmt = 0
+        high_lvl_opp = 0
+        if not is_spectrum:
+            threshold = player.level * hl_mult
+            high_lvl_tmmt = sum(1 for lvl in teammates_levels if lvl >= threshold)
+            high_lvl_opp = sum(1 for lvl in opponents_levels if lvl >= threshold)
+
+        # -- History-based components (always use history up to round_idx) --
+        prior_teammate_sets = (
+            player.teammate_history[:round_idx]
+            if hasattr(player, "teammate_history")
+            else []
+        )
+        prior_game_sets = (
+            player.other_players_in_same_game_history[:round_idx]
+            if hasattr(player, "other_players_in_same_game_history")
+            else []
+        )
+        prior_teammates_flat = frozenset(pp for fs in prior_teammate_sets for pp in fs)
+        prior_game_flat = frozenset(pp for fs in prior_game_sets for pp in fs)
+        prior_all = prior_teammates_flat | prior_game_flat
+
+        # current teammate frozenset (live, for pending rounds)
+        current_tmmt_fs = frozenset(my_team.players_set)
+
+        has_same_teammate = current_tmmt_fs in prior_teammate_sets
+
+        same_people_count = sum(1 for pp in all_others if pp in prior_game_flat)
+        never_met_count = sum(1 for pp in all_others if pp not in prior_all)
+
+        same_tmmt_penalty = -weight if has_same_teammate else 0.0
+        same_people_penalty = -(weight / same_div) * same_people_count
+        never_met_bonus = min(never_met_count * nmb_per_player, nmb_cap)
+
+        # -- Gender / level bonuses --
+        is_gender_sat = getattr(game, "is_gender_preference_satisfied", True)
+        gender_preference = getattr(game, "gender_preference", None)
+        type_preference = getattr(game, "type_preference", None)
+        minority_gender = getattr(game_round, "minority_gender", None)
+        gender_level_medians = getattr(game_round, "gender_level_medians", {})
+        session_median = getattr(game_round, "session_median_level", None)
+
+        gender_penalty = 0.0
+        if not is_gender_sat:
+            gender_penalty = (
+                -gender_pen_spectrum if is_spectrum else -gender_pen_non_spectrum
+            )
+
+        minority_bonus = 0.0
+        if gender_preference == "mixed" and minority_gender is not None:
+            if player.gender == minority_gender:
+                minority_bonus = minority_bonus_val
+
+        above_median_bonus = 0.0
+        if type_preference == "level":
+            if gender_preference == "mixed" and gender_level_medians:
+                gender_median = gender_level_medians.get(player.gender)
+                if gender_median is not None and player.level > gender_median:
+                    above_median_bonus = above_median_bonus_val
+            elif session_median is not None:
+                if player.level > session_median:
+                    above_median_bonus = above_median_bonus_val
+
+        # -- Pair bonus (from committed _pair_happiness_per_round) --
+        pair_bonus = 0.0
+        try:
+            per_round = self.session_of_rounds._pair_happiness_per_round
+            awards = per_round.get(player.name, [])
+            if round_idx < len(awards):
+                pair_bonus = float(awards[round_idx])
+        except Exception:
+            pair_bonus = 0.0
+
+        # -- Total gain --
+        if is_spectrum:
+            spec_gain = (
+                spec_breakdown.get(chosen_spec, {}).get("gain", 0) if chosen_spec else 0
+            )
+            total = (
+                spec_gain
+                + same_tmmt_penalty
+                + same_people_penalty
+                + never_met_bonus
+                + gender_penalty
+                + minority_bonus
+                + above_median_bonus
+                + pair_bonus
+            )
+        else:
+            total = (
+                high_lvl_tmmt
+                + high_lvl_opp
+                + same_tmmt_penalty
+                + same_people_penalty
+                + never_met_bonus
+                + gender_penalty
+                + minority_bonus
+                + above_median_bonus
+                + pair_bonus
+            )
+
+        return {
+            "is_spectrum": is_spectrum,
+            "spec_breakdown": spec_breakdown,
+            "chosen_spec": chosen_spec,
+            "high_lvl_tmmt": high_lvl_tmmt,
+            "high_lvl_opp": high_lvl_opp,
+            "same_tmmt_penalty": same_tmmt_penalty,
+            "same_people_penalty": same_people_penalty,
+            "never_met_bonus": never_met_bonus,
+            "never_met_count": never_met_count,
+            "gender_penalty": gender_penalty,
+            "minority_bonus": minority_bonus,
+            "above_median_bonus": above_median_bonus,
+            "pair_bonus": pair_bonus,
+            "total_gain": total,
+            "round_has_pending": round_has_pending,
+        }
+
+    def _build_ge_tooltip_text(self, player, round_idx, game_idx, team_id):
+        """Format the breakdown dict from _compute_tooltip_breakdown into display text."""
+        bd = self._compute_tooltip_breakdown(player, round_idx, game_idx, team_id)
+        lines = [f"── {player.name}  [Round {round_idx + 1}] ──"]
+
+        if bd.get("sitting_out"):
+            lines.append("Sitting out this round")
+            return "\n".join(lines)
+
+        if bd.get("error"):
+            lines.append("(Could not compute breakdown)")
+            return "\n".join(lines)
+
+        is_spectrum = bd["is_spectrum"]
+
+        if is_spectrum:
+            spec_bd = bd["spec_breakdown"]
+            chosen = bd["chosen_spec"]
+            # Row 1: Prey / Hntr / Clgr — Row 2: Clst / Equl / Chll
+            order = ["Prey", "Hunter", "Challenger", "Classist", "Equilibrist", "Chill"]
+            row_parts = [[], []]
+            for i, spec_name in enumerate(order):
+                abbrev = _SPEC_ABBREV.get(spec_name, spec_name)
+                info = spec_bd.get(spec_name, {})
+                score = info.get("score", 0)
+                triggered = info.get("triggered", False)
+                marker = "✓" if triggered else " "
+                row_parts[i // 3].append(f"{abbrev}:{score}{marker}")
+            lines.append("  " + "  ".join(row_parts[0]))
+            lines.append("  " + "  ".join(row_parts[1]))
+            chosen_gain = spec_bd.get(chosen, {}).get("gain", 0) if chosen else 0
+            chosen_abbrev = _SPEC_ABBREV.get(chosen, chosen or "?")
+            lines.append(f"  → Chosen: {chosen_abbrev}  {chosen_gain:+.0f}")
+        else:
+            if bd["high_lvl_tmmt"]:
+                lines.append(f"High-lvl tmmt:  +{bd['high_lvl_tmmt']}")
+            if bd["high_lvl_opp"]:
+                lines.append(f"High-lvl opp:   +{bd['high_lvl_opp']}")
+
+        if bd["never_met_bonus"]:
+            lines.append(
+                f"Never met:      {bd['never_met_bonus']:+.0f}  ({bd['never_met_count']} new)"
+            )
+        if bd["same_tmmt_penalty"]:
+            lines.append(f"Same tmmt:      {bd['same_tmmt_penalty']:+.0f}")
+        if bd["same_people_penalty"]:
+            lines.append(f"Same people:    {bd['same_people_penalty']:+.0f}")
+        if bd["gender_penalty"]:
+            lines.append(
+                f"Gender pref:    {bd['gender_penalty']:+.0f}  (not satisfied)"
+            )
+        if bd["minority_bonus"]:
+            lines.append(f"Minority:       {bd['minority_bonus']:+.0f}")
+        if bd["above_median_bonus"]:
+            lines.append(f"Level bonus:    {bd['above_median_bonus']:+.0f}")
+        if bd["pair_bonus"]:
+            lines.append(f"Pref pair:      {bd['pair_bonus']:+.0f}")
+
+        lines.append("─" * 20)
+        pending_tag = "  [pending]" if bd.get("round_has_pending") else ""
+        lines.append(f"Total:          {bd['total_gain']:+.0f}{pending_tag}")
+        return "\n".join(lines)
+
+    def _show_ge_tooltip(self, btn, round_idx, game_idx, team_id):
+        """Compute and show the tooltip for the given player button."""
+        try:
+            # Resolve player from live data model (not stale player_info cache)
+            key = None
+            for k, b in self.game_player_buttons.items():
+                if b is btn:
+                    key = k
+                    break
+            if key is None:
+                return
+            player = self._player_from_button_key(key)
+            if player is None:
+                return
+
+            text = self._build_ge_tooltip_text(player, round_idx, game_idx, team_id)
+            x = btn.winfo_rootx() + btn.winfo_width() + 4
+            y = btn.winfo_rooty()
+            self.show_tooltip_at(x, y, text)
+        except Exception:
+            pass
 
     def toggle_player_selection(self, button, player_info):
         """Toggle player selection for swapping"""
@@ -1285,26 +1769,28 @@ class GamesEditorTabMixin:
             diff_label.config(text=diff_text, fg=diff_color)
 
     def _render_score_history(self):
-        """Redraw the score history strip inside score_history_container."""
+        """Redraw the score history strip; each chip (except current) is clickable to restore that version."""
         if not hasattr(self, "score_history_container"):
             return
         for w in self.score_history_container.winfo_children():
             w.destroy()
 
-        YELLOW = self.colors["accent_yellow"]
         GREEN = "#4CAF50"
         RED = "#E53935"
         GRAY = "#BBBBBB"
-        BG = self.colors["bg_dark"]
 
-        for i, score in enumerate(self.score_history):
+        last_idx = len(self.score_history) - 1
+        for i, entry in enumerate(self.score_history):
+            score, pkl_path = entry if isinstance(entry, tuple) else (entry, None)
+
             # Determine colour relative to previous entry
             if i == 0:
                 label_text = "Initial"
                 box_color = GRAY
                 arrow = ""
             else:
-                prev = self.score_history[i - 1]
+                prev_entry = self.score_history[i - 1]
+                prev = prev_entry[0] if isinstance(prev_entry, tuple) else prev_entry
                 delta = score - prev
                 if delta > 0.009:
                     box_color = GREEN
@@ -1317,14 +1803,19 @@ class GamesEditorTabMixin:
                     arrow = "  ≈ 0"
                 label_text = f"Swap {i}"
 
+            is_current = i == last_idx
             cell = tk.Frame(
-                self.score_history_container, bg=box_color, relief=tk.RIDGE, bd=1
+                self.score_history_container,
+                bg=box_color,
+                relief=tk.SUNKEN if is_current else tk.RIDGE,
+                bd=3 if is_current else 1,
             )
             cell.pack(side=tk.LEFT, padx=3, pady=2)
 
-            tk.Label(
+            display_label = f"► {label_text}" if is_current else label_text
+            lbl_top = tk.Label(
                 cell,
-                text=label_text,
+                text=display_label,
                 font=(
                     self.fonts["small"][0],
                     max(7, self.fonts["small"][1] - 1),
@@ -1334,8 +1825,9 @@ class GamesEditorTabMixin:
                 bg=box_color,
                 padx=6,
                 pady=1,
-            ).pack()
-            tk.Label(
+            )
+            lbl_top.pack()
+            lbl_score = tk.Label(
                 cell,
                 text=f"{score:.3f}",
                 font=(self.fonts["small"][0], self.fonts["small"][1], "bold"),
@@ -1343,10 +1835,12 @@ class GamesEditorTabMixin:
                 bg=box_color,
                 padx=6,
                 pady=1,
-            ).pack()
+            )
+            lbl_score.pack()
 
+            lbl_arrow = None
             if arrow:
-                tk.Label(
+                lbl_arrow = tk.Label(
                     cell,
                     text=arrow,
                     font=(self.fonts["small"][0], max(7, self.fonts["small"][1] - 1)),
@@ -1354,7 +1848,61 @@ class GamesEditorTabMixin:
                     bg=box_color,
                     padx=4,
                     pady=1,
-                ).pack()
+                )
+                lbl_arrow.pack()
+
+            # Make non-current chips clickable to restore that session version
+            if not is_current and pkl_path:
+                _handler = lambda e, p=pkl_path: self._restore_session_version(p)
+                targets = (cell, lbl_top, lbl_score) + (
+                    (lbl_arrow,) if lbl_arrow else ()
+                )
+                for widget in targets:
+                    widget.config(cursor="hand2")
+                    widget.bind("<Button-1>", _handler)
+
+    def _restore_session_version(self, pkl_path):
+        """Restore the editor to a previously saved session version."""
+        if not pkl_path or not os.path.exists(pkl_path):
+            messagebox.showerror(
+                "Restore failed", f"Snapshot file not found:\n{pkl_path}"
+            )
+            return
+
+        from core.pickle_helper import load_session  # noqa: PLC0415
+
+        try:
+            session = load_session(pkl_path)
+
+            # Stamp objective metadata if absent (legacy pkls)
+            if not getattr(session, "_objective_function_name", None):
+                session._objective_function_name = "mean_min_max_happiness_objective"
+            if getattr(session, "_objective_lambda_weight", None) is None:
+                session._objective_lambda_weight = 2.4
+            if getattr(session, "_objective_percentile", None) is None:
+                session._objective_percentile = 10
+
+            self.session_of_rounds = session
+
+            # Truncate history to this restore point and preserve it across editor rebuild
+            for idx, entry in enumerate(self.score_history):
+                _, path = entry if isinstance(entry, tuple) else (entry, None)
+                if path == pkl_path:
+                    self._pending_restore_history = self.score_history[: idx + 1]
+                    break
+
+            # Rebuild editor with restored session state
+            self.show_games_editor()
+            print(f"\nSession restored from: {os.path.basename(pkl_path)}")
+
+        except Exception as e:
+            import traceback  # noqa: PLC0415
+
+            print(f"Error restoring session version: {e}")
+            traceback.print_exc()
+            messagebox.showerror(
+                "Restore failed", f"Could not restore session:\n\n{str(e)}"
+            )
 
     def update_changes_display(self):
         """Update the visual display of pending changes"""
@@ -1551,11 +2099,13 @@ class GamesEditorTabMixin:
                 else:
                     _player = _game_round.games[_g_idx].team_B.players[_col]
                 _token = self._middle_style_token_for_player(_player, _team_id)
+                _spec_middle = self._baseline_spec_middle(_player, _r_idx, _team_id)
                 self._apply_player_button_presentation(
                     _btn,
                     _player,
                     _team_id,
                     middle_token=_token,
+                    middle_override=_spec_middle,
                 )
             except Exception:
                 pass
@@ -1577,6 +2127,26 @@ class GamesEditorTabMixin:
         print(f"New Std Happiness: {self.session_of_rounds.std_happiness:.2f}")
         print("=" * 80)
 
+        # Pre-compute the versioned pkl path for this apply operation so score history
+        # can link each chip to the snapshot written during the same apply.
+        _versioned_pkl_for_hist = None
+        _sf_for_hist = getattr(self, "_active_session_folder", None)
+        if _sf_for_hist and os.path.exists(_sf_for_hist):
+            import re as _re_hist  # noqa: PLC0415
+
+            _fn_for_hist = os.path.basename(_sf_for_hist)
+            _dp_for_hist = "_".join(_fn_for_hist.split("_")[:3])
+            _existing_v_for_hist = [
+                f
+                for f in os.listdir(_sf_for_hist)
+                if f.endswith(".pkl") and _re_hist.search(r"_v\d+\.pkl$", f)
+            ]
+            _nv_for_hist = len(_existing_v_for_hist) + 1
+            _versioned_pkl_for_hist = os.path.join(
+                _sf_for_hist,
+                f"session_of_rounds_{_dp_for_hist}_v{_nv_for_hist}.pkl",
+            )
+
         # Append new score to history and refresh the strip
         try:
             from core.models import (
@@ -1590,114 +2160,106 @@ class GamesEditorTabMixin:
                 getattr(self, "_score_pct", 10),
             )
             if hasattr(self, "score_history"):
-                self.score_history.append(_new_score)
+                self.score_history.append((_new_score, _versioned_pkl_for_hist))
             self._render_score_history()
         except Exception:
             pass
 
         # Regenerate plots, update XLS and PKL files if they exist
         try:
-            sessions_dir = "sessions"
-            if os.path.exists(sessions_dir):
-                session_folders = [
-                    os.path.join(sessions_dir, d)
-                    for d in os.listdir(sessions_dir)
-                    if os.path.isdir(os.path.join(sessions_dir, d))
-                ]
-                folders_with_plots = [
-                    f
-                    for f in session_folders
-                    if os.path.exists(os.path.join(f, "plots"))
-                ]
-                if folders_with_plots:
-                    most_recent = max(folders_with_plots, key=os.path.getmtime)
-                    plots_dir = os.path.join(most_recent, "plots")
-                    session_folder = most_recent
+            session_folder = getattr(self, "_active_session_folder", None)
+            if session_folder and os.path.exists(session_folder):
+                plots_dir = os.path.join(session_folder, "plots")
+                os.makedirs(plots_dir, exist_ok=True)
 
-                    print("\nRegenerating plots with updated data...")
-                    # Add a clear blank line before heavy chart work
-                    print()
-                    main_module.create_all_session_charts(
-                        self.session_of_rounds, save_png=True, png_dir=plots_dir
+                print("\nRegenerating plots with updated data...")
+                # Add a clear blank line before heavy chart work
+                print()
+                main_module.create_all_session_charts(
+                    self.session_of_rounds, save_png=True, png_dir=plots_dir
+                )
+
+                # Small pause in console output for readability
+                print()
+                # Refresh plot tabs
+                self.show_plots_window(plots_dir)
+                print("\nPlots regenerated successfully!\n")
+
+                # Regenerate and refresh the Session Games PNG
+                try:
+                    from core.charts import (  # noqa: PLC0415
+                        create_session_games_png,
+                        create_session_games_round_images,
                     )
 
-                    # Small pause in console output for readability
-                    print()
-                    # Refresh plot tabs
-                    self.show_plots_window(plots_dir)
-                    print("\nPlots regenerated successfully!\n")
+                    session_games_png = os.path.join(
+                        session_folder, "session_games.png"
+                    )
+                    create_session_games_png(
+                        self.session_of_rounds,
+                        session_games_png,
+                        show_levels=self.png_show_levels_var.get(),
+                    )
+                    _round_imgs = create_session_games_round_images(
+                        self.session_of_rounds,
+                        show_levels=self.png_show_levels_var.get(),
+                    )
+                    self.show_session_games_tab(
+                        session_games_png, round_images=_round_imgs
+                    )
+                    print("Session Games PNG updated successfully!\n")
+                except Exception as png_error:
+                    print(f"Warning: Could not update Session Games PNG: {png_error}")
 
-                    # Regenerate and refresh the Session Games PNG
-                    try:
-                        from core.charts import (  # noqa: PLC0415
-                            create_session_games_png,
-                            create_session_games_round_images,
-                        )
-
-                        session_games_png = os.path.join(
-                            most_recent, "session_games.png"
-                        )
-                        create_session_games_png(
-                            self.session_of_rounds,
-                            session_games_png,
-                            show_levels=self.png_show_levels_var.get(),
-                        )
-                        _round_imgs = create_session_games_round_images(
-                            self.session_of_rounds,
-                            show_levels=self.png_show_levels_var.get(),
-                        )
-                        self.show_session_games_tab(
-                            session_games_png, round_images=_round_imgs
-                        )
-                        print("Session Games PNG updated successfully!\n")
-                    except Exception as png_error:
-                        print(
-                            f"Warning: Could not update Session Games PNG: {png_error}"
-                        )
-
-                    # Update Excel file with new game data
-                    print("\nUpdating Excel file with new data...\n")
-                    try:
-                        # Find the existing xlsx file in the session folder
-                        xlsx_files = [
-                            f
-                            for f in os.listdir(session_folder)
-                            if f.endswith(".xlsx") and not f.endswith("_read_only.xlsx")
-                        ]
-                        if xlsx_files:
-                            xlsx_filename = xlsx_files[0]  # Use the first found
-                        else:
-                            # Fallback: use default naming if none found
-                            folder_name = os.path.basename(session_folder)
-                            date_str = folder_name.split("_")[0:3]
-                            date_str = "_".join(date_str)
-                            xlsx_filename = f"session_{date_str}.xlsx"
-
-                        self.session_of_rounds.export_to_excel(
-                            directory=session_folder, filename=xlsx_filename
-                        )
-                        print(f"Excel file updated successfully as {xlsx_filename}!")
-                    except Exception as excel_error:
-                        print(f"Warning: Could not update Excel file: {excel_error}")
-
-                    # Update pickle file with new session data
-                    print("\nUpdating pickle file with new data...\n")
-                    try:
-                        from core.pickle_helper import save_session
-
-                        # Extract only the date part (e.g., 18_11_2025) from folder name
+                # Update Excel file with new game data
+                print("\nUpdating Excel file with new data...\n")
+                try:
+                    # Find the existing xlsx file in the session folder
+                    xlsx_files = [
+                        f
+                        for f in os.listdir(session_folder)
+                        if f.endswith(".xlsx") and not f.endswith("_read_only.xlsx")
+                    ]
+                    if xlsx_files:
+                        xlsx_filename = xlsx_files[0]  # Use the first found
+                    else:
+                        # Fallback: use default naming if none found
                         folder_name = os.path.basename(session_folder)
-                        date_str = folder_name.split("_")[0:3]
-                        date_str = "_".join(date_str)  # Only day_month_year
+                        date_str = "_".join(folder_name.split("_")[:3])
+                        xlsx_filename = f"session_{date_str}.xlsx"
 
-                        save_session(
-                            self.session_of_rounds,
-                            folder=session_folder,
-                            filename=f"session_of_rounds_{date_str}_modified.pkl",
-                        )
-                        print("Pickle file updated successfully!")
-                    except Exception as pickle_error:
-                        print(f"Warning: Could not update pickle file: {pickle_error}")
+                    self.session_of_rounds.export_to_excel(
+                        directory=session_folder, filename=xlsx_filename
+                    )
+                    print(f"Excel file updated successfully as {xlsx_filename}!")
+                except Exception as excel_error:
+                    print(f"Warning: Could not update Excel file: {excel_error}")
+
+                # Save versioned pickle snapshot
+                print("\nSaving versioned pickle snapshot...\n")
+                try:
+                    import re as _re_pkl  # noqa: PLC0415
+                    from core.pickle_helper import save_session  # noqa: PLC0415
+
+                    folder_name = os.path.basename(session_folder)
+                    date_str = "_".join(folder_name.split("_")[:3])
+                    existing_versions = [
+                        f
+                        for f in os.listdir(session_folder)
+                        if f.endswith(".pkl") and _re_pkl.search(r"_v\d+\.pkl$", f)
+                    ]
+                    next_version = len(existing_versions) + 1
+                    versioned_filename = (
+                        f"session_of_rounds_{date_str}_v{next_version}.pkl"
+                    )
+                    save_session(
+                        self.session_of_rounds,
+                        folder=session_folder,
+                        filename=versioned_filename,
+                    )
+                    print(f"Versioned pickle saved as: {versioned_filename}")
+                except Exception as pickle_error:
+                    print(f"Warning: Could not save versioned pickle: {pickle_error}")
         except Exception as e:
             print(f"Warning: Could not regenerate plots: {e}")
 
@@ -1718,7 +2280,7 @@ class GamesEditorTabMixin:
             "Session files updated:\n"
             "• Plots regenerated\n"
             "• Excel file updated\n"
-            "• Pickle file updated",
+            "• Versioned pickle snapshot saved",
         )
 
         # Re-enable the apply button

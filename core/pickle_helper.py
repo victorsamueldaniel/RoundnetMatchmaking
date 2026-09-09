@@ -55,8 +55,8 @@ def load_session(file_path):
     Returns:
     - SessionOfRounds: The loaded session object
     """
-    # Ensure we import main module so classes are available
-    import main
+    # Ensure core models are importable for pickle deserialization
+    import core.main as _main  # noqa: F401
 
     try:
         with open(file_path, "rb") as f:

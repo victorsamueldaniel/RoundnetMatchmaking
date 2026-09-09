@@ -10,7 +10,7 @@ The UI has been split into a coordinator + tab modules architecture:
 - `ui/main/player_selection_ui.py`: backward-compatible wrapper entrypoint.
 - `ui/main/build_exe.py`: PyInstaller build script.
 ### tabs
-- `ui/tabs/session_generation_tab.py`: Session Generation tab controller.
+- `ui/tabs/session_generation_tab.py`: Session Generation tab controller. Includes the **Load Existing Session** button (📂) which opens a file dialog, deserializes a saved `.pkl`, and opens the same editor/plots tabs that appear after generating a session.
 - `ui/tabs/games_editor_tab.py`: Games Editor tab controller.
 - `ui/tabs/session_games_tab.py`: Session Games tab controller.
 - `ui/tabs/plots_tab/plots_tab.py`: Plots tab controller.

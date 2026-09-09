@@ -1,5 +1,53 @@
 # Changelog
 All notable changes to this project are documented in this file.
+## [1.7.0] - ...
+- Add AI Quick Reference documentation, bug replay script, model tests, and bug reporter
+
+- Created AI Quick Reference documentation in docs/AI_REFERENCE.md for quick lookup of data model attributes, function locations, and common task recipes.
+
+- Added a bug replay script in scripts/replay_bug.py to facilitate the reproduction of bug reports by setting up the environment and launching the app.
+
+- Introduced tests for model helpers in tests/test_models_extras.py, covering compute_session_score, reorder_rounds, GameOfFour, and TeamOfTwo.
+
+- Implemented a bug reporter in ui/functions/bug_reporter.py to collect and package bug reports, including logs, preferences, and session data.
+## [1.6.0] - 2026-05-14
+### Added
+- **Load Existing Session** button (📂) in the Session Generation tab. Opens a file dialog starting in `sessions/`, lets the user pick any `.pkl` snapshot (original or versioned), and opens the same Games Editor / Session Games / Plots tabs that appear after generating a session.
+- **Versioned pickle snapshots**: each time Apply Changes is clicked in the Games Editor, a new numbered snapshot is saved alongside the original (e.g. `session_of_rounds_DD_MM_YYYY_v1.pkl`, `_v2.pkl`, …). The original file is never overwritten.
+- **Score chip restore**: every entry in the Games Editor score history strip (except the current one) is now a clickable button. Clicking a chip loads the corresponding versioned snapshot and rebuilds the editor at that state, truncating future entries.
+- `_restore_session_version(pkl_path)` method on `GamesEditorTabMixin` — loads a pkl, stamps missing objective metadata, preserves truncated score history across the editor rebuild.
+- `_load_existing_session()` method on `SessionGenerationTabMixin` — handles the full load flow: file dialog, deserialization, metadata stamping, PNG/plots regeneration, and tab display.
+
+### Changed
+- **Active session folder tracking**: `_active_session_folder` attribute (initialised to `None` in `__init__`) is now set explicitly after each successful save, replacing the fragile `max(folders_with_plots, key=os.path.getmtime)` scan in both the Games Editor apply-changes block and the session-generation fallback path.
+- `core/pickle_helper.load_session()`: replaced `import main` (script-context legacy) with `import core.main as _main` so the function works correctly inside the UI runtime.
+- Score history entries are now `(score: float, pkl_path: str | None)` tuples instead of bare floats. `_render_score_history` handles both formats for backward compatibility.
+- Current score chip is visually distinguished (SUNKEN relief, 3 px border, ► prefix) to make the active state clear at a glance.
+- swapped save all and confirm choices buttons on app quit
+- **Extra parameters live-read**: `run_session` (and any future generation triggers) now reads `extra_parameters_temp.json` fresh at each call via `load_extra_preferences_temp()`, so edits made to that file mid-session are picked up on the next generation without restarting the app.
+- **Extra parameters archive on close**: on app exit, if `extra_parameters_temp.json` differs from `extra_parameters.json`, a styled save dialog appears offering to archive the temp file as `extra_parameters_temp_DD_MM_YYYY.json` in `ui/user_preferences/` for later reuse.
+## [1.5.0]
+### Changed
+#### new sorter in level games
+In games by level, there is now a helper function `_level_sorter` that sorts players by rounded level first and unhappiness second, with optional Gaussian noise to add variety across rounds. This helps players near a level boundary sometimes move into a different group.
+Example:
+Example players: A (lvl 3.9, happiness 10), B (lvl 3.4, happiness 9).
+If the noise gives B a level of 3.6, then both players round to 4, so the keys become:
+`_level_sorter(A) = (4, -10)`
+`_level_sorter(B) = (4, -9)`
+
+So B is placed ahead of A in that case. If B instead stays below 3.5, then A sorts ahead because its rounded level is higher.
+
+#### User preferences
+The application now remembers user-configured parameters across sessions using a small set of JSON files stored under `ui/user_preferences/`. On launch, saved values are restored into all UI controls automatically, with no user action required.
+
+Parameters are split into two categories. **Auto-saved** parameters (number of rounds, games per round, level gap tolerance, lambda weight, percentile, spectrum toggle, and per-round type/gender preferences) are written to disk silently on every change via tkinter variable traces. **Opt-in** parameters (selected players, female level shift, and preferred pairs) are only persisted if the user explicitly chooses to save them at close time. When the app is closed and any of these opt-in parameters were modified during the session, a styled dialog appears listing each changed parameter individually with a Save / Discard toggle (defaulting to Discard), so the user can decide per-parameter.
+
+A separate file (`extra_parameters.json`) holds generation algorithm knobs that are not exposed in the UI (seed range, iteration count, teammate-repeat penalty, never-met bonus). These are read once at startup and can be tuned by editing the file directly. See `docs/PREFERENCES_PERSISTENCE.md` for the full parameter reference and instructions for adding new parameters.
+
+### Bug fixes
+- Fixed round type/gender preferences resetting to defaults when clicking `+` or `−` on the number of rounds. The controls now preserve current selections for existing rounds and, for newly added rounds, fall back to the last values stored in the runtime temp file instead of hardcoded defaults.
+
 ## [1.4.0] - 2026-05-08
 ### Added
 - Added a contact page tab.
