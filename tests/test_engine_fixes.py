@@ -115,3 +115,35 @@ def test_force_pairs_threshold_with_negative_score():
         if {p.name for p in t.players} == set(names[:2])
     )
     assert together >= 1
+
+
+def test_round_without_games_benches_everyone_and_stays_consistent():
+    from core.session_codec import decode_session, encode_session
+
+    players = _make_players(16)
+    session = SessionOfRounds(
+        players,
+        amount_of_rounds=3,
+        type_preferences=["level", "balanced", "level"],
+        level_gap_tol=0.0,
+        num_iter=5,
+        seed=1,
+    )
+    empty = [r for r in session.rounds if not r.games]
+    assert empty, "a zero tolerance should leave at least one round without games"
+    assert any(r.games for r in session.rounds)
+    for r in empty:
+        assert len(r.not_playing) == len(players)
+    documents = [
+        {
+            "id": p.name,
+            "Name": p.name,
+            "Surname": "",
+            "Level": p.level,
+            "Gender": p.gender,
+            **{k: getattr(p, k.lower()) for k in ["Prey", "Equilibrist", "Challenger", "Chill", "Hunter", "Classist"]},
+        }
+        for p in players
+    ]
+    reloaded = decode_session(encode_session(session, documents, {"level_gap_tol": 0.0}, []))
+    assert {p.name: p.happiness for p in reloaded.players} == {p.name: p.happiness for p in session.players}

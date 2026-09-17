@@ -317,7 +317,9 @@ def _evaluate_swap_score(round_obj, round_idx, pos_a, pos_b, session, lambda_wei
     """Evaluate a candidate swap and return the resulting session score, or None if invalid.
 
     All constraint checks (level gap, balance, gender preference) are performed and
-    the swap is always fully undone before returning.
+    the swap is always fully undone before returning. Only the swapped round is
+    recomputed here, so later rounds keep their gains: the score is an estimate
+    used to rank candidates, and the applied swap recomputes every later round.
     """
     round_obj.swap_player_positions(pos_a, pos_b)
 
@@ -337,12 +339,12 @@ def _evaluate_swap_score(round_obj, round_idx, pos_a, pos_b, session, lambda_wei
         return None
 
     # --- Recalculate happiness (rebuilds team objects, updates all histories) ---
-    _recalculate_from(session, round_idx)
+    round_obj.recalculate_happiness(round_idx)
 
     # --- Gender preference check ---
     if not all(g.is_gender_preference_satisfied for g in round_obj.games):
         round_obj.swap_player_positions(pos_a, pos_b)
-        _recalculate_from(session, round_idx)
+        round_obj.recalculate_happiness(round_idx)
         return None
 
     # --- Compute score ---
@@ -350,7 +352,7 @@ def _evaluate_swap_score(round_obj, round_idx, pos_a, pos_b, session, lambda_wei
 
     # --- Always undo ---
     round_obj.swap_player_positions(pos_a, pos_b)
-    _recalculate_from(session, round_idx)
+    round_obj.recalculate_happiness(round_idx)
     return score
 
 

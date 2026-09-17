@@ -37,8 +37,8 @@ PLAYER_FIELDS = [
 DEFAULT_PARAMS = {
     "level_gap_tol": 1.1,
     "num_iter": 435,
-    "lambda_weight": 2.4,
-    "percentile": 10,
+    "lambda_weight": 2.0,
+    "percentile": 33,
     "weight_same_teammate": 5,
     "never_met_bonus_per_player": 2,
     "never_met_bonus_cap": 4,

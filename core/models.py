@@ -1080,6 +1080,14 @@ class GamesRound:
 
         if preference_type == "level":
             self.create_games_by_level(seed=seed, **kwargs)
+
+        # Players picked to play but left out of every game (no valid combination) sit out.
+        in_games = {p for game in self.games for p in game.participants}
+        for player in self.people_playing:
+            if player not in in_games:
+                player.games_played -= 1
+        self.people_playing = [p for p in self.people_playing if p in in_games]
+
         self.teams = set()
         for game in self.games:
             self.teams = self.teams.union(game.teams)
