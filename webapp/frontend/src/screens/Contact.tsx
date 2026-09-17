@@ -30,13 +30,20 @@ function anonymise(roster: { id: string }[], document: SessionDocument | null) {
       bench: r.bench.map(name),
     })),
   }
-  return { players, session }
+  return { players, session, name, known: () => [...alias.keys()] }
 }
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 export function ContactScreen() {
   const bugReport = () => {
     const s = useStore.getState()
-    const { players, session } = anonymise(s.roster, s.document)
+    const { players, session, name, known } = anonymise(s.roster, s.document)
+    // Longest names first so "Jean" does not replace the start of "Jeanne".
+    const names = known().sort((a, b) => b.length - a.length)
+    const consoleTail = names.length
+      ? s.consoleText.slice(-20000).replace(new RegExp(names.map(escapeRegExp).join('|'), 'g'), (match) => name(match))
+      : s.consoleText.slice(-20000)
     downloadJson(
       {
         created_at: new Date().toISOString(),
@@ -47,7 +54,7 @@ export function ContactScreen() {
         extra_parameters: s.extraParameters,
         players_anonymized: players,
         session_anonymized: session,
-        console_tail: s.consoleText.slice(-20000),
+        console_tail: consoleTail,
       },
       `bug_report_${Date.now()}.json`,
     )

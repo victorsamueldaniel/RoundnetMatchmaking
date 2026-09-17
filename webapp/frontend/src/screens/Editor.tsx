@@ -116,7 +116,7 @@ export function EditorScreen() {
   const commit = useStore((s) => s.commitSession)
   const restore = useStore((s) => s.restoreVersion)
   const [selection, setSelection] = useState<Slot[]>([])
-  const [latestPreview, setPreview] = useState<SessionView | null>(null)
+  const [latestPreview, setPreview] = useState<{ key: string; view: SessionView } | null>(null)
   const [focus, setFocus] = useState<Slot | null>(null)
   const [detailsMode, setDetailsMode] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -130,7 +130,7 @@ export function EditorScreen() {
     let cancelled = false
     const timer = setTimeout(() => {
       viewSession(working).then(
-        (v) => !cancelled && setPreview(v),
+        (v) => !cancelled && setPreview({ key: JSON.stringify(swaps), view: v }),
         (e: Error) => !cancelled && toast('error', e.message),
       )
     }, 120)
@@ -138,9 +138,11 @@ export function EditorScreen() {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [working, swaps.length])
+  }, [working, swaps])
 
-  const preview = swaps.length ? latestPreview : null
+  const swapsKey = JSON.stringify(swaps)
+  // A preview only counts for the exact swaps it was computed from.
+  const preview = swaps.length && latestPreview?.key === swapsKey ? latestPreview.view : null
   const levels = useMemo(() => new Map(document.players.map((p) => [p.id, Number(p.Level)])), [document])
   const pairKeys = useMemo(() => new Set(document.preferred_pairs.map((p) => [...p.players].sort().join('|'))), [document])
   const pendingRounds = new Set(swaps.map((s) => s.round))
@@ -188,7 +190,6 @@ export function EditorScreen() {
     try {
       const next = await viewSession(working)
       commit(working, next, next.summary.score)
-      setPreview(null)
       toast(
         'success',
         `Applied ${swaps.length} change(s) successfully!\nNew mean happiness: ${next.summary.mean.toFixed(2)}\nNew std happiness: ${next.summary.std.toFixed(2)}`,

@@ -13,6 +13,8 @@ All notable changes to this project are documented in this file.
 - Benched players get empty teammate and opponent history entries, so `recalculate_happiness(round_idx)` reads the right round.
 - `force_preferred_pairs_in_session` recomputes the rounds after the swapped one, and its score threshold works with negative scores.
 - Level rounds use the configured `weight_same_teammate`.
+- A round where no valid combination exists now benches every player; they used to be neither in a game nor on the bench, with a stale gain and shifted histories.
+- Forcing preferred pairs ranks candidates on the swapped round only and recomputes the later rounds once a swap is applied, which keeps it fast on large sessions.
 - Excel export: teams in on-screen order, statistics computed from the players, read-only file named after the exported file, dates evaluated at call time.
 - Session games image no longer crashes on names without an ASCII capital letter.
 - Happiness by gender box plot colors for `Male` and `Female`.

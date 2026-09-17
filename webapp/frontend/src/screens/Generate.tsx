@@ -364,9 +364,9 @@ function RunBar() {
   const [running, setRunning] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const openDocument = async (document: SessionDocument, label: string) => {
+  const openDocument = async (document: SessionDocument, label: string, remember = true) => {
     const view = await viewSession(document)
-    state.openSession(document, view, label)
+    state.openSession(document, view, label, remember)
     state.setTab('editor')
   }
 
@@ -454,11 +454,20 @@ function RunBar() {
             <ul className="mt-2 flex flex-wrap gap-2">
               {state.recent.map((r) => (
                 <li key={r.savedAt}>
-                  <Button variant="ghost" className="min-h-8 py-1" onClick={() => openDocument(r.document, r.label)}>
+                  <Button
+                    variant="ghost"
+                    className="min-h-8 py-1"
+                    onClick={() => openDocument(r.document, r.label, false).catch((e: Error) => toast('error', e.message))}
+                  >
                     {r.label} · {new Date(r.savedAt).toLocaleString()}
                   </Button>
                 </li>
               ))}
+              <li>
+                <Button variant="ghost" className="min-h-8 py-1 text-muted" onClick={state.clearRecent}>
+                  Forget recent sessions
+                </Button>
+              </li>
             </ul>
           </details>
         )}

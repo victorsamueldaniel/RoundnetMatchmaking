@@ -1,7 +1,8 @@
 # Web app
 
 The web app brings every feature of the desktop app to the browser, on a phone or a computer.
-It reuses the Python engine in `core/` unchanged, so both apps produce the same sessions.
+Both apps call the same Python engine (`core/`) with the same parameters, so the matchmaking
+logic is shared; only the screens differ.
 
 ## Architecture
 
@@ -20,8 +21,12 @@ core/ engine: generation, happiness, charts data, Excel and PNG export
   session document it works on.
 - The heavy work (seed search) streams progress events as newline-delimited JSON, so the client
   shows the same progress bar and console output as the desktop app.
-- At most two generations run at the same time; the next requests wait for a free slot.
-- Inputs are bounded (200 players, 50 seeds, `num_iter` up to 5000, 5 MB Excel files).
+- The engine uses Python's global random generator, so engine calls run one at a time: a seed
+  always gives the same session, even when several people generate at once. Up to 3 generations
+  can wait in line; beyond that the server answers 429 ("busy, retry in a minute").
+- A generation stops at the next seed when the browser disconnects.
+- Inputs are bounded (200 players, 20 rounds, 30 seeds, `num_iter` up to 2000, 5 MB Excel files),
+  and session documents are validated before use (unknown or repeated players, invalid levels).
 
 ### Session documents (`core/session_codec.py`)
 

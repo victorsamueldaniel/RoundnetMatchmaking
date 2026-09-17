@@ -66,7 +66,8 @@ type State = Confirmable & {
   saveConfirmable: (keys: (keyof Confirmable)[]) => void
   discardConfirmable: (keys: (keyof Confirmable)[]) => void
   setExtraParameters: (value: Record<string, unknown>) => void
-  openSession: (document: SessionDocument, view: SessionView, label: string) => void
+  openSession: (document: SessionDocument, view: SessionView, label: string, remember?: boolean) => void
+  clearRecent: () => void
   commitSession: (document: SessionDocument, view: SessionView, score: number) => void
   restoreVersion: (index: number, view: SessionView) => void
   setView: (view: SessionView) => void
@@ -79,6 +80,41 @@ type State = Confirmable & {
 const DEFAULT_TYPES: RoundType[] = ['balanced', 'balanced', 'level', 'level']
 const DEFAULT_GENDERS: RoundGender[] = ['open', 'mixed', 'mixed', 'open']
 const MAX_CONSOLE = 400_000
+const MAX_HISTORY = 30
+const MAX_RECENT = 5
+
+/** localStorage that never throws: a full or blocked storage must not break the app. */
+let storageWarned = false
+const safeStorage = {
+  getItem: (name: string) => {
+    try {
+      return localStorage.getItem(name)
+    } catch {
+      return null
+    }
+  },
+  setItem: (name: string, value: string) => {
+    try {
+      localStorage.setItem(name, value)
+    } catch {
+      if (!storageWarned) {
+        storageWarned = true
+        console.warn('Browser storage is full: recent changes are not saved. Clear old sessions to fix it.')
+      }
+    }
+  },
+  removeItem: (name: string) => {
+    try {
+      localStorage.removeItem(name)
+    } catch {
+      // nothing to remove
+    }
+  },
+}
+
+/** Keep the initial version and the latest ones. */
+const capHistory = (history: HistoryEntry[]) =>
+  history.length > MAX_HISTORY ? [history[0], ...history.slice(history.length - MAX_HISTORY + 1)] : history
 
 export const useStore = create<State>()(
   persist(
@@ -169,20 +205,21 @@ export const useStore = create<State>()(
         set((s) => ({ saved: { ...s.saved, ...Object.fromEntries(keys.map((k) => [k, s[k]])) } })),
       discardConfirmable: (keys) => set((s) => Object.fromEntries(keys.map((k) => [k, s.saved[k]]))),
       setExtraParameters: (value) => set({ extraParameters: value }),
-      openSession: (document, view, label) =>
+      openSession: (document, view, label, remember = true) =>
         set((s) => ({
           document,
           view,
           history: [{ score: view.summary.score, document }],
           pendingSwaps: [],
-          recent: [{ savedAt: new Date().toISOString(), label, document }, ...s.recent].slice(0, 8),
+          recent: remember ? [{ savedAt: new Date().toISOString(), label, document }, ...s.recent].slice(0, MAX_RECENT) : s.recent,
         })),
+      clearRecent: () => set({ recent: [] }),
       commitSession: (document, view, score) =>
         set((s) => ({
           document,
           view,
           pendingSwaps: [],
-          history: [...s.history, { score, document }],
+          history: capHistory([...s.history, { score, document }]),
           recent: s.recent.length
             ? [{ ...s.recent[0], document }, ...s.recent.slice(1)]
             : [{ savedAt: new Date().toISOString(), label: 'Edited session', document }],
@@ -207,7 +244,7 @@ export const useStore = create<State>()(
     {
       name: 'roundnet-matchmaking',
       version: 1,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => safeStorage),
       partialize: (s) => ({
         roster: s.roster,
         overrides: s.overrides,
