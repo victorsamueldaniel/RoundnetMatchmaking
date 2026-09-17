@@ -403,7 +403,7 @@ def force_preferred_pairs_in_session(
         return
 
     base_score = _session_score(session, lambda_weight)
-    score_threshold = base_score * (1.0 - score_tolerance)
+    score_threshold = base_score - abs(base_score) * score_tolerance
 
     # Resolve player objects and compute how many rounds each pair still needs
     players_per_pair = []

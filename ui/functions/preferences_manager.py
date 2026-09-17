@@ -77,10 +77,6 @@ _EXTRA_DEFAULTS: dict = {
             }
         },
         "generate_all_game_combinations": {
-            "max_combos": {
-                "depth_0": 20,
-                "depth_n": 10,
-            },
             "max_team_combos": 3,
         },
         "spectrum": {
