@@ -132,7 +132,7 @@ def decode_session(doc):
     session.game_optimization = extra.get("game_optimization", {})
     session.happiness_config = extra.get("happiness", {})
     session.prioritize_level_rounds = True
-    session.rounds_reordering = None
+    session.rounds_reordering = params.get("rounds_reordering")
     session.type_preferences = [r["type_preference"] for r in doc["rounds"]]
     session.gender_preferences = [r["gender_preference"] for r in doc["rounds"]]
     session.games_per_round_each_round = [len(r["games"]) for r in doc["rounds"]]
