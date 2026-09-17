@@ -8,7 +8,7 @@ All notable changes to this project are documented in this file.
 - `pyproject.toml` extra `web`; CI builds the web client and runs the web API tests.
 
 ### Fixed
-- Balanced rounds: `generate_all_game_combinations` samples each combination independently. The depth-first search stopped after `num_iter` leaves that all shared the same first games. On 16 synthetic sessions the chosen session score improved in 15 cases (+7.2 on average).
+- Balanced rounds: `generate_all_game_combinations` samples each combination independently. The depth-first search stopped after `num_iter` leaves that all shared the same first games. On 16 synthetic sessions (13 to 27 players, 10 seeds, both versions scored with the same happiness rules) the chosen session score improved in all 16 cases (+8.1 on average) and the least happy player gained 3.5 happiness on average.
 - Level rounds: the level noise is drawn per player from one generator per round; the same seeded draw was applied to every player, so it had no effect.
 - Benched players get empty teammate and opponent history entries, so `recalculate_happiness(round_idx)` reads the right round.
 - `force_preferred_pairs_in_session` recomputes the rounds after the swapped one, and its score threshold works with negative scores.
