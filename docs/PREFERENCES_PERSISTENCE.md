@@ -75,8 +75,6 @@ Advanced expert knobs are nested and use script terminology to mirror call sites
 
 - `game_optimization.games_by_level._level_sorter.sd_of_randomizer` (default `0.1`)
 - `game_optimization.games_by_level._level_sorter.round_factor` (default `1`)
-- `game_optimization.generate_all_game_combinations.max_combos.depth_0` (default `20`)
-- `game_optimization.generate_all_game_combinations.max_combos.depth_n` (default `10`)
 - `game_optimization.generate_all_game_combinations.max_team_combos` (default `3`)
 - `game_optimization.spectrum.Prey.opponents_mean_level_multiplier` (default `0.7`)
 - `game_optimization.spectrum.Challenger.opponents_mean_level_multiplier` (default `0.9`)

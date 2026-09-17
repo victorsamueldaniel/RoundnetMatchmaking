@@ -1,5 +1,28 @@
 # Changelog
 All notable changes to this project are documented in this file.
+## [Unreleased]
+### Added
+- Web app (`webapp/`): FastAPI server on top of `core/` and a React + TypeScript client usable on phones, with every desktop feature (player import and edits, round preferences, parameters, preferred pairs, advanced parameters, streamed generation with console, games editor with live preview and happiness breakdown, round reordering, Excel/PNG/JSON/text downloads, the three chart tabs, contact and anonymised bug report). Deployable on Railway through `Dockerfile` and `railway.json`. See `docs/WEBAPP.md`.
+- `core/session_codec.py`: JSON session documents rebuilt with a full chronological happiness recompute, as a safe replacement for pickle files.
+- `core/happiness_breakdown.py`: per-term explanation of each player's happiness gain, tested against the engine.
+- `pyproject.toml` extra `web`; CI builds the web client and runs the web API tests.
+
+### Fixed
+- Balanced rounds: `generate_all_game_combinations` samples each combination independently. The depth-first search stopped after `num_iter` leaves that all shared the same first games. On 16 synthetic sessions (13 to 27 players, 10 seeds, both versions scored with the same happiness rules) the chosen session score improved in all 16 cases (+8.1 on average) and the least happy player gained 3.5 happiness on average.
+- Level rounds: the level noise is drawn per player from one generator per round; the same seeded draw was applied to every player, so it had no effect.
+- Benched players get empty teammate and opponent history entries, so `recalculate_happiness(round_idx)` reads the right round.
+- `force_preferred_pairs_in_session` recomputes the rounds after the swapped one, and its score threshold works with negative scores.
+- Level rounds use the configured `weight_same_teammate`.
+- A round where no valid combination exists now benches every player; they used to be neither in a game nor on the bench, with a stale gain and shifted histories.
+- Forcing preferred pairs ranks candidates on the swapped round only and recomputes the later rounds once a swap is applied, which keeps it fast on large sessions.
+- Excel export: teams in on-screen order, statistics computed from the players, read-only file named after the exported file, dates evaluated at call time.
+- Session games image no longer crashes on names without an ASCII capital letter.
+- Happiness by gender box plot colors for `Male` and `Female`.
+
+### Removed
+- `extra_parameters` keys `generate_all_game_combinations.max_combos.depth_0` and `depth_n` (no longer used).
+- The `temp_boost` loop in `SessionOfRounds.create_rounds`, which had no effect.
+
 ## [1.7.0] - ...
 - Add AI Quick Reference documentation, bug replay script, model tests, and bug reporter
 

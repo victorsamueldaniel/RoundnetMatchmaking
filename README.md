@@ -1,116 +1,135 @@
 # Roundnet Matchmaking
 
-Roundnet Matchmaking is a Python desktop application that generates balanced sessions and matchups from player skill and preference data.
+Roundnet Matchmaking builds balanced roundnet sessions: several rounds of 2 vs 2 games where
+every player gets a fair share of games, partners and opponents, based on their level, gender and
+spectrum preferences.
+
+The project ships two front ends on top of the same Python engine (`core/`):
+
+- **Web app** (`webapp/`): works on a phone or a computer, and can be deployed on Railway.
+- **Desktop app** (`ui/`): the original Tkinter application, packaged as an executable.
 
 ## Features
-- Session generation with optimization-based balancing.
-- Spreadsheet-driven player import.
-- Desktop UI for setup and execution.
-- Chart generation and post-session artifacts.
 
-## Quick Start
-1. Create and activate a virtual environment.
-2. Install the project in editable mode:
-   ```bash
-   python -m pip install -e ".[dev]"
-   ```
-3. Start the application:
-   ```bash
-   roundnet-matchmaking
-   ```
+- Import players from an Excel file (French or English column names), fill in missing gender or
+  level, add or edit players.
+- Round preferences: number of rounds, games per round, `balanced` or `level` rounds, `open` or
+  `mixed` gender rules.
+- Optimization parameters: weight of the least happy players (bottom x%), maximal level gap,
+  female level shift, spectrum on/off, preferred pairs forced together for 1 to 4 games, and
+  advanced knobs (`extra_parameters`).
+- Seed search with live progress and console output.
+- Games editor: swap players inside a round, live preview of each player's happiness change,
+  detailed happiness breakdown, undo, apply, score history with version restore.
+- Session games view: reorder rounds, show levels, download the games image, the Excel files
+  (editable and read-only), the session file and a text report.
+- Charts: happiness overview, spectrum analysis, team analysis (partnership and opponent networks).
 
-If you run project code from Jupyter/VS Code notebooks, also install and register
-the venv kernel:
+## Player file format
+
+| Column | Required | Accepted names | Values |
+|---|---|---|---|
+| Name | yes | `Name`, `Prénom`, `Prénom - First name` | text |
+| Surname | yes | `Surname`, `Nom`, `Nom - Surname` | text |
+| Gender | yes | `Gender`, `Genre`, `Genre - Gender` | `Male`/`Female`, `M`/`F`, `Masculin`/`Féminin`, `Homme`/`Femme` |
+| Level | yes | `Level`, `Niveau`, `Niveau moyen` | number, e.g. 1.0 to 5.0 |
+| Prey, Equilibrist, Challenger, Chill, Hunter, Classist | no | `Masochiste` (Prey), `Équilibré` (Equilibrist), `Sadique` (Hunter), `Alchimiste` (Classist) | 0 to 10, blank means 5 |
+
+Players with a missing gender or level are asked for right after the import.
+
+## Web app
+
+### Run it locally
+
+Requirements: Python 3.11+ and Node.js 20.19+.
 
 ```bash
-python -m pip install ipykernel
-python -m ipykernel install --user --name roundnet-matchmaking --display-name "Python (RoundnetMatchmaking)"
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+python -m pip install -e ".[dev,web]"
+
+cd webapp/frontend
+npm ci
+npm run build
+cd ../..
+
+uvicorn webapp.server.app:app --port 8000
 ```
 
-Then select that kernel before running notebook cells.
+Open http://localhost:8000. On a phone connected to the same network, start uvicorn with
+`--host 0.0.0.0` and open `http://<computer-ip>:8000`.
 
-Preferred launch mode:
-- Use the installed command `roundnet-matchmaking`.
-- For development, use module execution from repo root: `python -m ui.main.roundnet_matchmaking_ui`.
-- Legacy compatibility path is still available: `python -m ui.main.player_selection_ui`.
-- Avoid direct file execution (`python ui/main/roundnet_matchmaking_ui.py`) because it can bypass package import context.
-- For the desktop UI, prefer launching from a terminal (not from a notebook cell).
+For frontend development with hot reload, run the API and the Vite dev server side by side:
 
-## UI Troubleshooting (Windows)
-
-### `TclError: Can't find a usable init.tcl`
-
-Error example:
-
-```text
-TclError: Can't find a usable init.tcl ...
-This probably means that Tcl wasn't installed properly.
+```bash
+uvicorn webapp.server.app:app --port 8000 --reload   # terminal 1, repo root
+cd webapp/frontend && npm run dev                    # terminal 2, open http://localhost:5173
 ```
 
-This means the active Python interpreter cannot find its Tcl/Tk runtime files.
+The Vite dev server forwards `/api` calls to port 8000.
 
-Recommended fix order:
+### Deploy on Railway
 
-1. Verify which interpreter is active:
-   ```bash
-   python -c "import sys; print(sys.executable)"
-   ```
-2. Recreate the venv from a full Python install that includes Tcl/Tk.
-3. Reinstall dependencies:
-   ```bash
-   python -m pip install -e ".[dev]"
-   python -m pip install -e ".[ui]"
-   ```
-4. Quick tkinter check:
-   ```bash
-   python -c "import tkinter as tk; r = tk.Tk(); r.destroy(); print('tk ok')"
-   ```
+1. Create a Railway project from this GitHub repository.
+2. Railway picks up `railway.json` and builds the `Dockerfile` (client build, then Python image).
+3. No environment variable is needed: the server listens on `$PORT` and `/api/health` is the
+   health check.
 
-If needed as a temporary workaround, set these environment variables to your
-Python Tcl directories before launching:
+To check the image locally:
 
-```powershell
-$env:TCL_LIBRARY = "C:\Path\To\Python\tcl\tcl8.6"
-$env:TK_LIBRARY  = "C:\Path\To\Python\tcl\tk8.6"
+```bash
+docker build -t roundnet-matchmaking-web .
+docker run --rm -p 8000:8000 roundnet-matchmaking-web
 ```
+
+### Where data lives
+
+The server stores nothing. Players, settings, advanced parameters and sessions are kept in the
+browser (`localStorage`), and every request sends the data it needs. A session can be downloaded
+as a `.json` file and loaded again later, on any device. See [docs/WEBAPP.md](docs/WEBAPP.md) for
+the architecture and the differences with the desktop app.
+
+## Desktop app
+
+```bash
+python -m pip install -e ".[dev]"
+roundnet-matchmaking
+```
+
+- For development, run the module from the repo root: `python -m ui.main.roundnet_matchmaking_ui`.
+- Avoid direct file execution (`python ui/main/roundnet_matchmaking_ui.py`), which bypasses the
+  package import context.
+- Pre-built executables for Windows, macOS and Linux are attached to the
+  [GitHub Releases](../../releases). To build one yourself:
+  `python -m pip install -e ".[ui]"` then `python ui/main/build_exe.py` (output in `ui/main/dist/`).
+
+### macOS first launch
+
+The `.app` bundle is not signed. On first launch, right-click the app, choose **Open**, then
+confirm with **Open**. Later launches work normally.
+
+### Windows: `TclError: Can't find a usable init.tcl`
+
+The active Python interpreter cannot find its Tcl/Tk files.
+
+1. Check the interpreter: `python -c "import sys; print(sys.executable)"`.
+2. Recreate the venv from a full Python install that includes Tcl/Tk, then reinstall the project.
+3. Check tkinter: `python -c "import tkinter as tk; r = tk.Tk(); r.destroy(); print('tk ok')"`.
+
+As a temporary workaround, point `TCL_LIBRARY` and `TK_LIBRARY` to your Python `tcl` folders.
 
 ## Development
-Run script-based validation (CI baseline):
+
 ```bash
-python tests/run_script_tests.py
+pytest -q                                  # engine and web API tests
+cd webapp/frontend && npm run build        # type check and build the client
 ```
 
-Run pytest-native tests (optional while migration is in progress):
-```bash
-pytest -q
-```
+## Repository layout
 
-## Build Executable (Windows / macOS / Linux)
-Install UI/build extras and run the build script:
-```bash
-python -m pip install -e ".[ui]"
-python ui/main/build_exe.py
-```
-The build output is created under `ui/main/dist/`.
-Pre-built binaries for all platforms are available as zip attachments on the
-[GitHub Releases](../../releases) page.
-
-## macOS — First Launch (Gatekeeper)
-The distributed `.app` bundle is not code-signed with an Apple Developer certificate.
-On first launch macOS will block it with *"App can't be opened because it's from an
-unidentified developer"*. To open it:
-1. Right-click (or Control-click) the `.app` file.
-2. Select **Open** from the context menu.
-3. Click **Open** in the confirmation dialog.
-
-Subsequent launches work normally.
-
-## Release Model
-- Build artifacts are not committed to source control.
-- Publish executable bundles through GitHub Releases.
-
-## Repository Layout
-- `core/`: matchmaking engine and domain logic.
+- `core/`: matchmaking engine, charts, Excel export, JSON session documents.
 - `ui/`: desktop UI and executable build script.
-- `tests/`: automated test suite.
-- `docs/`: technical and build documentation.
+- `webapp/server/`: FastAPI server used by the web app.
+- `webapp/frontend/`: React + TypeScript client.
+- `tests/`, `webapp/tests/`: automated tests.
+- `docs/`: technical documentation.

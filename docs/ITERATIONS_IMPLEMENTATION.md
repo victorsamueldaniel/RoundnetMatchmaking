@@ -17,8 +17,8 @@ Included:
 
 - Core matchmaking and scoring behavior in [core/algorithm.py](../core/algorithm.py)
 - Domain model logic in [core/models.py](../core/models.py)
-- UI controls and orchestration that influence optimization semantics in [ui/player_selection_ui.py](../ui/player_selection_ui.py)
-- Current docs/tests claims in [docs/ITERATIONS_IMPLEMENTATION.md](./ITERATIONS_IMPLEMENTATION.md), [tests/test_iterations.py](../tests/test_iterations.py), [tests/comprehensive_test_iterations.py](../tests/comprehensive_test_iterations.py), and [tests/test_post_processing.py](../tests/test_post_processing.py)
+- UI controls and orchestration that influence optimization semantics in [ui/tabs/session_generation_tab.py](../ui/tabs/session_generation_tab.py)
+- Current docs/tests claims in [docs/ITERATIONS_IMPLEMENTATION.md](./ITERATIONS_IMPLEMENTATION.md), [tests/test_iterations.py](../tests/test_iterations.py), and [tests/test_post_processing.py](../tests/test_post_processing.py)
 
 Not included:
 
@@ -72,12 +72,12 @@ Primary anchors:
 - [core/models.py:581](../core/models.py#L581)
 - [core/models.py:687](../core/models.py#L687)
 - [core/models.py:1034](../core/models.py#L1034)
-- [ui/player_selection_ui.py:4802](../ui/player_selection_ui.py#L4802)
+- [ui/tabs/session_generation_tab.py](../ui/tabs/session_generation_tab.py)
 
 ## Priority Order (Actual Execution)
 1. Input normalization and round ordering:
     - Session generation internally prioritizes level rounds first, then may reorder back to UI order.
-    - [core/models.py:1706](../core/models.py#L1706), [core/models.py:1724](../core/models.py#L1724), [core/models.py:1798](../core/models.py#L1798), [ui/player_selection_ui.py:4824](../ui/player_selection_ui.py#L4824)
+    - [core/models.py:1706](../core/models.py#L1706), [core/models.py:1724](../core/models.py#L1724), [core/models.py:1798](../core/models.py#L1798), [ui/tabs/session_generation_tab.py](../ui/tabs/session_generation_tab.py)
 
 2. Participation priority (who sits out):
     - Players are grouped by games played, shuffled, sorted by increasing happiness within each games-played group, then groups are flattened in descending games-played order.
@@ -154,7 +154,7 @@ Main update function: [core/models.py:103](../core/models.py#L103)
 
 | Modifier | Effective Formula | Default Values | Evidence |
 |---|---|---|---|
-| Repeated teammate penalty | `-weight_same_teammate * has_same_teammate` | usually `weight_same_teammate=5` in session path | [core/models.py:188](../core/models.py#L188), [core/models.py:1488](../core/models.py#L1488), [ui/player_selection_ui.py:4860](../ui/player_selection_ui.py#L4860) |
+| Repeated teammate penalty | `-weight_same_teammate * has_same_teammate` | usually `weight_same_teammate=5` in session path | [core/models.py:188](../core/models.py#L188), [core/models.py:1488](../core/models.py#L1488), [ui/tabs/session_generation_tab.py](../ui/tabs/session_generation_tab.py) |
 | Repeated opponents/same-game people penalty | `-(weight_same_teammate/2) * amount_same_people_in_game_history` | derived from same weight | [core/models.py:192](../core/models.py#L192) |
 | Never-met bonus | `+min(count * never_met_bonus_per_player, never_met_bonus_cap)` | per player `2`, cap `4` | [core/models.py:195](../core/models.py#L195), [core/models.py:467](../core/models.py#L467), [core/models.py:1489](../core/models.py#L1489) |
 | Gender dissatisfaction penalty | `-5` in spectrum mode, else `-2` | mode-dependent | [core/models.py:202](../core/models.py#L202), [core/models.py:203](../core/models.py#L203) |
@@ -165,9 +165,11 @@ Main update function: [core/models.py:103](../core/models.py#L103)
 
 ## Iteration Budget and Sampling Semantics
 ### Balanced rounds
-- Generation function uses recursive sampling with an early stop cap:
-  - `max_combinations = self.num_iter`
-  - [core/models.py:836](../core/models.py#L836)
+- `generate_all_game_combinations` draws up to `num_iter` distinct combinations independently:
+  shuffle the playing players, cut them into games of four, pick one of the three team splits
+  per game, and skip duplicates (at most `5 * num_iter` draws).
+- Every game of the round varies from one candidate to the next, so the objective ranks whole
+  rounds instead of only the last games.
 
 Important practical meaning:
 
@@ -188,9 +190,9 @@ UI orchestration and labels materially affect interpretation of optimization beh
 
 | UI Surface | Actual Wiring | Evidence | Risk |
 |---|---|---|---|
-| "minimize happiness gap" slider (`lambda_weight_var`) | Passed to Stage A objective lambda, Stage B seed ranking objective, and Stage C preferred-pairs tolerance score | [ui/player_selection_ui.py:1382](../ui/player_selection_ui.py#L1382), [ui/player_selection_ui.py:4859](../ui/player_selection_ui.py#L4859), [ui/player_selection_ui.py:4860](../ui/player_selection_ui.py#L4860), [ui/player_selection_ui.py:4878](../ui/player_selection_ui.py#L4878) | Remaining risk is only in edge fallback path when objective function cannot be evaluated at session stage |
-| Internal generation order | UI computes `rounds_reordering`; core also prioritizes level rounds internally before optional reorder | [ui/player_selection_ui.py:4824](../ui/player_selection_ui.py#L4824), [core/models.py:1708](../core/models.py#L1708), [core/models.py:1798](../core/models.py#L1798) | Harder to reason about round-by-round causality without explicit documentation |
-| Games Editor score strip | Uses mean+lambda*bottom-percent wording and same lambda as UI slider at session start | [ui/player_selection_ui.py:2680](../ui/player_selection_ui.py#L2680), [ui/player_selection_ui.py:2660](../ui/player_selection_ui.py#L2660) | Improves Stage A alignment but can still differ from Stage C post-processing score semantics |
+| "minimize happiness gap" slider (`lambda_weight_var`) | Passed to Stage A objective lambda, Stage B seed ranking objective, and Stage C preferred-pairs tolerance score | [ui/tabs/session_generation_tab.py](../ui/tabs/session_generation_tab.py), [ui/tabs/session_generation_tab.py](../ui/tabs/session_generation_tab.py), [ui/tabs/session_generation_tab.py](../ui/tabs/session_generation_tab.py), [ui/tabs/session_generation_tab.py](../ui/tabs/session_generation_tab.py) | Remaining risk is only in edge fallback path when objective function cannot be evaluated at session stage |
+| Internal generation order | UI computes `rounds_reordering`; core also prioritizes level rounds internally before optional reorder | [ui/tabs/session_generation_tab.py](../ui/tabs/session_generation_tab.py), [core/models.py:1708](../core/models.py#L1708), [core/models.py:1798](../core/models.py#L1798) | Harder to reason about round-by-round causality without explicit documentation |
+| Games Editor score strip | Uses mean+lambda*bottom-percent wording and same lambda as UI slider at session start | [ui/tabs/session_generation_tab.py](../ui/tabs/session_generation_tab.py), [ui/tabs/session_generation_tab.py](../ui/tabs/session_generation_tab.py) | Improves Stage A alignment but can still differ from Stage C post-processing score semantics |
 
 
 ## Minimum Test Additions to Prevent Regression

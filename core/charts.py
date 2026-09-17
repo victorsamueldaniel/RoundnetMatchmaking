@@ -131,7 +131,13 @@ def plot_happiness_charts(
     # Prepare data for boxplot
     box_data = []
     box_labels = []
-    box_colors = {"Homme": "lightblue", "Femme": "lightpink", "Unknown": "lightgray"}
+    box_colors = {
+        "Male": "lightblue",
+        "Female": "lightpink",
+        "Homme": "lightblue",
+        "Femme": "lightpink",
+        "Unknown": "lightgray",
+    }
     colors_list = []
 
     for gender in sorted(happiness_by_gender.keys()):
@@ -141,7 +147,11 @@ def plot_happiness_charts(
 
     # Create boxplot
     bp = ax3.boxplot(
-        box_data, tick_labels=box_labels, patch_artist=True, showmeans=True, meanline=True
+        box_data,
+        tick_labels=box_labels,
+        patch_artist=True,
+        showmeans=True,
+        meanline=True,
     )
 
     # Color the boxes
@@ -940,9 +950,9 @@ def create_all_session_charts(
 
 def _playershort(player):
     player_name_surname_split = re.split(r"(?=[A-Z])", player)
-    player_first_name = player_name_surname_split[1]
 
     if len(player_name_surname_split) == 3:
+        player_first_name = player_name_surname_split[1]
         player_surname = player_name_surname_split[2]
         length_surname = len(player_surname)
         return (

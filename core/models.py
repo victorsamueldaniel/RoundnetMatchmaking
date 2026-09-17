@@ -833,6 +833,8 @@ class GamesRound:
         for player in self.not_playing:
             player.spec_chosen_history.append(None)
             player.happiness_gained_history.append(None)
+            player.teammate_history.append(frozenset())
+            player.other_players_in_same_game_history.append(frozenset())
 
     def __getstate__(self):
         """Return state for pickling, excluding non-picklable items"""
@@ -930,22 +932,6 @@ class GamesRound:
             ),
             "happiness_bonus_above_median_level_type_level": _cfg_get(
                 hc, "bonuses.above_median_level.type_level", 1
-            ),
-            "depth_0_cap": max(
-                1,
-                int(
-                    _cfg_get(
-                        go, "generate_all_game_combinations.max_combos.depth_0", 20
-                    )
-                ),
-            ),
-            "depth_n_cap": max(
-                1,
-                int(
-                    _cfg_get(
-                        go, "generate_all_game_combinations.max_combos.depth_n", 10
-                    )
-                ),
             ),
             "team_combo_cap": max(
                 1,
@@ -1077,9 +1063,6 @@ class GamesRound:
         else:
             preference_type = self.type_preference
             kwargs = {}
-        print(
-            f"[create_games] preference_type={preference_type}, seed={seed}, type_preference={self.type_preference}"
-        )
         if preference_type == "balanced":
 
             # Create all games together optimizing global happiness score
@@ -1097,6 +1080,14 @@ class GamesRound:
 
         if preference_type == "level":
             self.create_games_by_level(seed=seed, **kwargs)
+
+        # Players picked to play but left out of every game (no valid combination) sit out.
+        in_games = {p for game in self.games for p in game.participants}
+        for player in self.people_playing:
+            if player not in in_games:
+                player.games_played -= 1
+        self.people_playing = [p for p in self.people_playing if p in in_games]
+
         self.teams = set()
         for game in self.games:
             self.teams = self.teams.union(game.teams)
@@ -1259,12 +1250,12 @@ class GamesRound:
 
     def generate_all_game_combinations(self, people_playing):
         """
-        Generate all possible ways to divide players into games.
+        Sample up to ``num_iter`` distinct ways to divide players into games.
         Returns a list of game combinations, where each combination is a list of GameOfFour objects.
-        Uses sampling and early stopping to avoid combinatorial explosion.
-        """
-        from itertools import combinations
 
+        Each combination is drawn independently (shuffle, cut into games, pick a
+        team split per game), so every game of the round varies across samples.
+        """
         players = list(people_playing)
         n_players = len(players)
         players_per_game = self.teams_per_game * self.players_per_team
@@ -1272,84 +1263,47 @@ class GamesRound:
         if n_players != self.amount_of_games * players_per_game:
             return []
 
-        # Strict limit on total combinations to avoid infinite loops
+        team_splits = [
+            (list(team1), [i for i in range(players_per_game) if i not in team1])
+            for team1 in combinations(range(players_per_game), self.players_per_team)
+            if 0 in team1
+        ]
+        team_splits = team_splits[: self._params["team_combo_cap"]]
+
         max_combinations = self.num_iter
+        max_attempts = max_combinations * 5
+        seen = set()
         all_combinations = []
 
-        def generate_games_recursive(remaining_players, current_games, depth=0):
-            # Early stopping if we have enough combinations
+        for _ in range(max_attempts):
             if len(all_combinations) >= max_combinations:
-                return
-
-            if len(remaining_players) == 0:
-                # All players assigned, add this combination
-                all_combinations.append(current_games.copy())
-                return
-
-            if len(remaining_players) < players_per_game:
-                # Not enough players for another game
-                return
-
-            # Limit the number of player combinations we consider
-            game_player_combos = list(combinations(remaining_players, players_per_game))
-
-            # Sample combinations if there are too many
-            depth_0_cap = self._params["depth_0_cap"]
-            depth_n_cap = self._params["depth_n_cap"]
-            if depth == 0:  # First level
-                max_combos = min(len(game_player_combos), depth_0_cap)
-            else:  # Deeper levels
-                max_combos = min(len(game_player_combos), depth_n_cap)
-
-            if len(game_player_combos) > max_combos:
-                random.shuffle(game_player_combos)
-                game_player_combos = game_player_combos[:max_combos]
-
-            for game_players in game_player_combos:
-                if len(all_combinations) >= max_combinations:
-                    break
-
-                game_players_list = list(game_players)
-
-                # Limit team arrangements - only try 3 different arrangements
-                team_combos = list(
-                    combinations(range(players_per_game), self.players_per_team)
-                )
-                max_team_combos = min(len(team_combos), self._params["team_combo_cap"])
-                team_combos = team_combos[:max_team_combos]
-
-                for team1_indices in team_combos:
-                    if len(all_combinations) >= max_combinations:
-                        break
-
-                    team2_indices = [
-                        i for i in range(players_per_game) if i not in team1_indices
-                    ]
-
-                    team1_players = [game_players_list[i] for i in team1_indices]
-                    team2_players = [game_players_list[i] for i in team2_indices]
-
-                    team1 = TeamOfTwo(*team1_players)
-                    team2 = TeamOfTwo(*team2_players)
-
-                    game = GameOfFour(
+                break
+            shuffled = players.copy()
+            random.shuffle(shuffled)
+            games = []
+            signature = []
+            for start in range(0, n_players, players_per_game):
+                game_players = shuffled[start : start + players_per_game]
+                team1_idx, team2_idx = random.choice(team_splits)
+                team1 = TeamOfTwo(*[game_players[i] for i in team1_idx])
+                team2 = TeamOfTwo(*[game_players[i] for i in team2_idx])
+                games.append(
+                    GameOfFour(
                         team1,
                         team2,
                         type_preference=self.type_preference,
                         gender_preference=self.gender_preference,
                         weight_same_teammate=self.weight_same_teammate,
                     )
-
-                    # Recursively generate the rest
-                    game_players_set = set(game_players)  # O(1) membership
-                    new_remaining = [
-                        p for p in remaining_players if p not in game_players_set
-                    ]
-                    current_games.append(game)
-                    generate_games_recursive(new_remaining, current_games, depth + 1)
-                    current_games.pop()
-
-        generate_games_recursive(players, [])
+                )
+                signature.append(
+                    frozenset((team1.players_frozenset, team2.players_frozenset))
+                )
+            signature = frozenset(signature)
+            if signature in seen:
+                continue
+            seen.add(signature)
+            all_combinations.append(games)
 
         return all_combinations
 
@@ -1476,7 +1430,6 @@ class GamesRound:
     def _level_sorter(
         self, player, round_factor=None, max_noise_factor=None, seed=None
     ):
-        rng = random.Random(seed)
         if round_factor is None:
             round_factor = self._params["level_sorter_round_factor"]
         try:
@@ -1492,10 +1445,21 @@ class GamesRound:
         except (TypeError, ValueError):
             max_noise_factor = 0.2
         max_noise = self.session_median_level * max_noise_factor
-        noisy_level = round(player.level * round_factor) / round_factor + rng.uniform(
-            -max_noise, max_noise
+        noisy_level = (
+            round(player.level * round_factor) / round_factor
+            + self._unit_level_noise(player, seed) * max_noise
         )
         return (noisy_level, -player.happiness)
+
+    def _unit_level_noise(self, player, seed):
+        """Per-player noise in [-1, 1], drawn once per (round, seed) from one generator."""
+        cache = self.__dict__.setdefault("_level_noise_cache", {})
+        if seed not in cache:
+            cache[seed] = (random.Random(seed), {})
+        rng, noise_by_name = cache[seed]
+        if player.name not in noise_by_name:
+            noise_by_name[player.name] = rng.uniform(-1.0, 1.0)
+        return noise_by_name[player.name]
 
     def create_games_by_level(self, alternate=False, seed=None, **kwargs):
 
@@ -1701,6 +1665,7 @@ class GamesRound:
                     team2,
                     type_preference=self.type_preference,
                     gender_preference=self.gender_preference,
+                    weight_same_teammate=self.weight_same_teammate,
                 )
                 self.games.append(game)
                 game.update_players_happiness(
@@ -2303,23 +2268,6 @@ class SessionOfRounds:
                     happiness=self.happiness_config,
                 )
             )
-        # Calculate happiness inequality before each round
-        for i in range(self.amount_of_rounds):
-            # Sort players by happiness to prioritize less happy players
-            sorted_players = sorted(self.players, key=lambda p: p.happiness)
-
-            # Give priority to players with lower happiness scores
-            if i > 0:  # Skip for first round since all start at 0 happiness
-                # Assign temporary boost to level for less happy players
-                for idx, player in enumerate(sorted_players):
-                    boost_factor = 1 + (
-                        0.2 * (len(sorted_players) - idx) / len(sorted_players)
-                    )
-                    player.temp_boost = boost_factor
-
-            # Reset temporary boosts
-            for player in self.players:
-                player.temp_boost = 1.0
         self.rounds = rounds
         self.mean_happiness = np.mean([player.happiness for player in self.players])
         self.max_and_min_happiness = (
@@ -2790,7 +2738,7 @@ class SessionOfRounds:
     def export_to_excel(
         self,
         directory=None,
-        date_str=datetime.datetime.now().strftime("%d_%m_%Y"),
+        date_str=None,
         filename=None,
     ):
         """
@@ -2803,6 +2751,10 @@ class SessionOfRounds:
         Returns:
         - str: Path to the saved file
         """
+
+        if date_str is None:
+            date_str = datetime.datetime.now().strftime("%d_%m_%Y")
+        self.recalculate_session_statistics()
 
         # Create directory if it doesn't exist
         if directory is None:
@@ -2896,7 +2848,7 @@ class SessionOfRounds:
 
                 # Game data
                 for game_idx, game in enumerate(round.games, start=1):
-                    team_A, team_B = list(game.teams)
+                    team_A, team_B = game.team_A, game.team_B
                     team_A_players = [p.name for p in team_A.players]
                     team_B_players = [p.name for p in team_B.players]
 
@@ -3108,7 +3060,7 @@ class SessionOfRounds:
         print(f"Session exported successfully to: {filepath}")
 
         # Create read-only version
-        readonly_filename = f"session_{date_str}_read_only.xlsx"
+        readonly_filename = filename[: -len(".xlsx")] + "_read_only.xlsx"
         readonly_filepath = os.path.join(directory, readonly_filename)
 
         # Copy the workbook for read-only version
@@ -3139,13 +3091,15 @@ class SessionOfRounds:
 
     def save_session_of_rounds(
         self,
-        date_str=datetime.datetime.now().strftime("%d_%m_%Y"),
+        date_str=None,
         main_folder="sessions",
         export_to_excel=True,
         create_plots=True,
         **kwargs,
     ):
 
+        if date_str is None:
+            date_str = datetime.datetime.now().strftime("%d_%m_%Y")
         # Create the session folder path
         session_folder = os.path.join(main_folder, date_str)
         # Create the folder if it doesn't exist, or find an available suffix
