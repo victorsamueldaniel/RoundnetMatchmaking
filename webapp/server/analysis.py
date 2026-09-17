@@ -130,11 +130,14 @@ def team_analysis(session):
         "partner_edges": [
             {"a": a, "b": b, "count": n} for (a, b), n in partner_counts.items()
         ],
-        "opponent_edges": [
-            {"a": sorted(pair)[0], "b": sorted(pair)[1], "count": n}
-            for pair, n in opponent_pairs.items()
-            if n >= 2
-        ],
+        "opponent_edges": sorted(
+            (
+                {"a": sorted(pair)[0], "b": sorted(pair)[1], "count": n}
+                for pair, n in opponent_pairs.items()
+                if n >= 2
+            ),
+            key=lambda e: (e["a"], e["b"]),
+        ),
         "levels_by_gender": [
             {"gender": g, "values": v} for g, v in levels_by_gender.items()
         ],

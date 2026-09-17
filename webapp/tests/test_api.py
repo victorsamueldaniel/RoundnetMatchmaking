@@ -111,3 +111,47 @@ def test_generate_rejects_huge_budgets(players):
         "extra_parameters": {"num_iter": 10**7},
     }
     assert client.post("/api/sessions/generate", json=body).status_code == 422
+
+
+@pytest.mark.parametrize(
+    "corrupt",
+    [
+        lambda d: d["rounds"][0]["games"][0]["team_a"].__setitem__(0, "Ghost"),
+        lambda d: d["rounds"][0]["bench"].append(
+            d["rounds"][0]["games"][0]["team_b"][0]
+        ),
+        lambda d: d["players"][0].__setitem__("Level", "nan"),
+        lambda d: d["players"].append(dict(d["players"][0])),
+        lambda d: d["rounds"][0].__setitem__("type_preference", "chaos"),
+    ],
+)
+def test_invalid_documents_are_rejected_everywhere(generated, corrupt):
+    import copy
+
+    document = copy.deepcopy(generated[-1]["document"])
+    corrupt(document)
+    for path in (
+        "/api/sessions/view",
+        "/api/sessions/report",
+        "/api/sessions/xlsx",
+        "/api/sessions/png",
+    ):
+        assert client.post(path, json={"document": document}).status_code == 422
+
+
+def test_views_are_identical_between_calls(generated):
+    document = generated[-1]["document"]
+    first = client.post("/api/sessions/view", json={"document": document}).json()
+    second = client.post("/api/sessions/view", json={"document": document}).json()
+    assert first == second
+
+
+def test_too_many_games_per_round_is_rejected(players):
+    body = {
+        "players": players[:8],
+        "amount_of_rounds": 1,
+        "type_preferences": ["balanced"],
+        "gender_preferences": ["open"],
+        "games_per_round": 3,
+    }
+    assert client.post("/api/sessions/generate", json=body).status_code == 422

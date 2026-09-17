@@ -5,12 +5,14 @@ sends a session document with every request. The engine in core/ does all the
 matchmaking work.
 """
 
+import asyncio
 import copy
 import io
 import json
 import math
 import os
 import queue
+import random
 import tempfile
 import threading
 from pathlib import Path
@@ -36,6 +38,7 @@ from core.data_loader import load_players_frame  # noqa: E402
 from core.happiness_breakdown import round_breakdown  # noqa: E402
 from core.models import mean_min_max_happiness_objective  # noqa: E402
 from core.session_codec import (  # noqa: E402
+    DEFAULT_PARAMS,
     PLAYER_FIELDS,
     decode_session,
     encode_session,
@@ -47,12 +50,23 @@ from webapp.server import analysis, console  # noqa: E402
 console.install()
 
 MAX_PLAYERS = 200
-MAX_SEEDS = 50
-MAX_NUM_ITER = 5000
-# matplotlib's pyplot state is global, so figure rendering is serialised.
-_render_lock = threading.Lock()
-# Generations are CPU heavy; extra requests wait for a free slot.
-_generation_slots = threading.BoundedSemaphore(2)
+MAX_ROUNDS = 20
+MAX_SEEDS = 30
+MAX_NUM_ITER = 2000
+MAX_WAITING_GENERATIONS = 3
+ROUND_TYPES = {"balanced", "level"}
+ROUND_GENDERS = {"open", "mixed"}
+
+# The engine draws from Python's global random generator and matplotlib's pyplot
+# state is global too: one engine call at a time keeps seeds reproducible.
+_engine_lock = threading.Lock()
+_waiting_lock = threading.Lock()
+_waiting_generations = 0
+
+
+class _Cancelled(Exception):
+    pass
+
 
 app = FastAPI(title="Roundnet Matchmaking")
 
@@ -176,12 +190,69 @@ def _pairs(entries):
     return pairs
 
 
+def _invalid(message):
+    return HTTPException(422, f"Invalid session document: {message}")
+
+
+def validate_document(document):
+    """Reject documents the engine cannot rebuild, before touching it."""
+    players = document.get("players")
+    rounds = document.get("rounds")
+    if not isinstance(players, list) or not 4 <= len(players) <= MAX_PLAYERS:
+        raise _invalid(f"between 4 and {MAX_PLAYERS} players are required")
+    if not isinstance(rounds, list) or not 1 <= len(rounds) <= MAX_ROUNDS:
+        raise _invalid(f"between 1 and {MAX_ROUNDS} rounds are required")
+    ids = []
+    for player in players:
+        if not isinstance(player, dict) or not isinstance(player.get("id"), str):
+            raise _invalid("every player needs a text id")
+        try:
+            level = float(player.get("Level"))
+        except (TypeError, ValueError):
+            level = math.nan
+        if not math.isfinite(level):
+            raise _invalid(f"player {player['id']} has no valid level")
+        ids.append(player["id"])
+    known = set(ids)
+    if len(known) != len(ids):
+        raise _invalid("duplicate player ids")
+    for index, round_ in enumerate(rounds, start=1):
+        if not isinstance(round_, dict):
+            raise _invalid(f"round {index} is malformed")
+        if (
+            round_.get("type_preference") not in ROUND_TYPES
+            or round_.get("gender_preference") not in ROUND_GENDERS
+        ):
+            raise _invalid(f"round {index} has an unknown type or gender preference")
+        names = list(round_.get("bench") or [])
+        for game in round_.get("games") or []:
+            team_a, team_b = game.get("team_a"), game.get("team_b")
+            if not (isinstance(team_a, list) and isinstance(team_b, list)) or (
+                len(team_a),
+                len(team_b),
+            ) != (2, 2):
+                raise _invalid(f"round {index} has a game without two teams of two")
+            names += team_a + team_b
+        if len(set(names)) != len(names):
+            raise _invalid(f"round {index} lists a player twice")
+        if not set(names) <= known:
+            raise _invalid(f"round {index} names an unknown player")
+
+
+def _decode(document):
+    """Validate and rebuild a session. The caller holds the engine lock."""
+    validate_document(document)
+    # Spectrum ties are broken at random: a fixed seed keeps every view identical.
+    random.seed(0)
+    return decode_session(document)
+
+
 def session_view(document):
     """Everything the client displays for a session document."""
-    session = decode_session(document)
+    session = _decode(document)
     params = document.get("params") or {}
-    lambda_weight = float(params.get("lambda_weight", 2.0))
-    percentile = float(params.get("percentile", 33))
+    lambda_weight = float(params.get("lambda_weight", DEFAULT_PARAMS["lambda_weight"]))
+    percentile = float(params.get("percentile", DEFAULT_PARAMS["percentile"]))
     pair_awards = getattr(session, "_pair_happiness_per_round", {})
     rounds = analysis.rounds_view(session)
     for r_idx, round_obj in enumerate(session.rounds):
@@ -214,6 +285,11 @@ def generate(request: GenerateRequest):
     ids = [p.get("id") for p in request.players]
     if len(set(ids)) != len(ids):
         raise HTTPException(422, "Duplicate player ids.")
+    if request.games_per_round and request.games_per_round > len(request.players) // 4:
+        raise HTTPException(
+            422,
+            f"{len(request.players)} players allow at most {len(request.players) // 4} games per round.",
+        )
 
     extra = _deep_merge(_EXTRA_DEFAULTS, request.extra_parameters)
     first_seed = int(extra.get("first_seed", 0))
@@ -245,12 +321,27 @@ def generate(request: GenerateRequest):
     )
     reordering = [generated_order.index(i) + 1 for i in range(request.amount_of_rounds)]
     events = queue.Queue()
+    cancelled = threading.Event()
+
+    global _waiting_generations
+    with _waiting_lock:
+        if _waiting_generations >= MAX_WAITING_GENERATIONS:
+            raise HTTPException(429, "The server is busy, please retry in a minute.")
+        _waiting_generations += 1
+
+    def progress(seed):
+        if cancelled.is_set():
+            raise _Cancelled()
+        events.put(
+            {"type": "progress", "seed": seed, "first": first_seed, "last": last_seed}
+        )
 
     def run():
-        _generation_slots.acquire()
+        global _waiting_generations
         try:
-            with console.capture(
-                lambda text: events.put({"type": "log", "text": text})
+            with (
+                _engine_lock,
+                console.capture(lambda text: events.put({"type": "log", "text": text})),
             ):
                 print("Starting session generation...")
                 print(f"Testing seeds {first_seed} to {last_seed}\n")
@@ -278,14 +369,7 @@ def generate(request: GenerateRequest):
                     games_per_round_each_round=request.games_per_round
                     or len(players) // 4,
                     print_progress=bool(extra.get("print_progress", True)),
-                    progress_callback=lambda s: events.put(
-                        {
-                            "type": "progress",
-                            "seed": s,
-                            "first": first_seed,
-                            "last": last_seed,
-                        }
-                    ),
+                    progress_callback=progress,
                 )
                 if pairs:
                     tolerance = extra["post_processing"][
@@ -300,56 +384,68 @@ def generate(request: GenerateRequest):
                     apply_preferred_pairs_happiness(session, pairs)
                 params["rounds_reordering"] = reordering
                 document = encode_session(session, players, params, pairs, seed=seed)
-                reloaded = decode_session(document)
+                reloaded = _decode(document)
                 print("=" * 80)
                 print("SESSION RESULTS")
                 print("=" * 80)
                 reloaded.print_all_results(print_levels=True)
-            events.put(
-                {"type": "result", "document": document, "view": session_view(document)}
-            )
+                result = {
+                    "type": "result",
+                    "document": document,
+                    "view": session_view(document),
+                }
+            events.put(result)
+        except _Cancelled:
+            pass
         except Exception as exc:
             events.put({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
         finally:
-            _generation_slots.release()
+            with _waiting_lock:
+                _waiting_generations -= 1
             events.put(None)
 
     threading.Thread(target=run, daemon=True).start()
 
-    def stream():
-        while True:
-            event = events.get()
-            if event is None:
-                return
-            yield json.dumps(event) + "\n"
+    async def stream():
+        try:
+            while True:
+                try:
+                    event = events.get_nowait()
+                except queue.Empty:
+                    await asyncio.sleep(0.05)
+                    continue
+                if event is None:
+                    return
+                yield json.dumps(event) + "\n"
+        finally:
+            # Runs when the client disconnects too: the generation stops at the next seed.
+            cancelled.set()
 
     return StreamingResponse(stream(), media_type="application/x-ndjson")
 
 
 @app.post("/api/sessions/view")
 def view(request: SessionRequest):
-    try:
+    with _engine_lock:
         return session_view(request.document)
-    except (KeyError, TypeError, ValueError) as exc:
-        raise HTTPException(422, f"Invalid session document: {exc}")
 
 
 @app.post("/api/sessions/report")
 def report(request: SessionRequest):
     lines = []
-    session = decode_session(request.document)
-    with console.capture(lines.append):
-        session.print_all_results(print_levels=True)
+    with _engine_lock, console.capture(lines.append):
+        _decode(request.document).print_all_results(print_levels=True)
     return {"text": "".join(lines)}
 
 
 @app.post("/api/sessions/xlsx")
 def export_xlsx(request: SessionRequest, read_only: bool = False):
-    session = decode_session(request.document)
-    session.rounds_reordering = (request.document.get("params") or {}).get(
-        "rounds_reordering"
-    )
-    with tempfile.TemporaryDirectory() as tmp, console.capture(lambda _t: None):
+    with (
+        _engine_lock,
+        tempfile.TemporaryDirectory() as tmp,
+        console.capture(lambda _t: None),
+    ):
+        session = _decode(request.document)
         session.export_to_excel(directory=tmp, filename="session.xlsx")
         name = "session_read_only.xlsx" if read_only else "session.xlsx"
         data = Path(tmp, name).read_bytes()
@@ -361,8 +457,8 @@ def export_xlsx(request: SessionRequest, read_only: bool = False):
 
 @app.post("/api/sessions/png")
 def export_png(request: PngRequest):
-    session = decode_session(request.document)
-    with tempfile.TemporaryDirectory() as tmp, _render_lock:
+    with _engine_lock, tempfile.TemporaryDirectory() as tmp:
+        session = _decode(request.document)
         path = os.path.join(tmp, "session_games.png")
         create_session_games_png(session, path, show_levels=request.show_levels)
         data = Path(path).read_bytes()
