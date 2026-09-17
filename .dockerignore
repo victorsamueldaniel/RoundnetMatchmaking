@@ -1,0 +1,9 @@
+.git
+.venv
+**/__pycache__
+**/node_modules
+webapp/frontend/dist
+BUG
+sessions
+ui/xlsx
+ui/main/dist

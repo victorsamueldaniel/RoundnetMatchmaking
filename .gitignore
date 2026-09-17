@@ -54,3 +54,8 @@ fusion_xlsx/
 *.tmp
 *.bak
 *.zip
+
+# Web app
+node_modules/
+webapp/frontend/dist/
+.playwright-mcp/

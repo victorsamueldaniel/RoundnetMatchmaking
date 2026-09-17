@@ -13,12 +13,12 @@ The UI has been split into a coordinator + tab modules architecture:
 - `ui/tabs/session_generation_tab.py`: Session Generation tab controller. Includes the **Load Existing Session** button (📂) which opens a file dialog, deserializes a saved `.pkl`, and opens the same editor/plots tabs that appear after generating a session.
 - `ui/tabs/games_editor_tab.py`: Games Editor tab controller.
 - `ui/tabs/session_games_tab.py`: Session Games tab controller.
-- `ui/tabs/plots_tab/plots_tab.py`: Plots tab controller.
-- `ui/tabs/plots_tab/plots_happiness_tab.py`: Happiness plots tab renderer.
-- `ui/tabs/plots_tab/plots_spectrum_tab.py`: Spectrum plots tab renderer.
-- `ui/tabs/plots_tab/plots_team_tab.py`: Team analysis plots tab renderer.
-- `ui/tabs/plots_tab/plots_generic_tab.py`: fallback renderer for uncategorized plots.
-- `ui/tabs/plots_tab/plots_base_tab.py`: shared image/zoom/scroll rendering logic for plot tabs.
+- `ui/tabs/plots_tabs/plots_tabs_orchestrator.py`: Plots tab controller.
+- `ui/tabs/plots_tabs/plots_happiness_tab.py`: Happiness plots tab renderer.
+- `ui/tabs/plots_tabs/plots_spectrum_tab.py`: Spectrum plots tab renderer.
+- `ui/tabs/plots_tabs/plots_team_tab.py`: Team analysis plots tab renderer.
+- `ui/tabs/plots_tabs/plots_generic_tab.py`: fallback renderer for uncategorized plots.
+- `ui/tabs/plots_tabs/plots_base_tab.py`: shared image/zoom/scroll rendering logic for plot tabs.
 ### functions
 - `ui/functions/setup_wizard.py`: first-run setup wizard and XLSX configuration flow.
 - `ui/functions/ui_helpers.py`: shared runtime helper utilities used across UI modules.
@@ -107,16 +107,16 @@ Interactive mode right panel order:
 4. Apply Changes
 5. Reset Order
 
-### Plots tab (`ui/tabs/plots_tab/plots_tab.py`)
+### Plots tab (`ui/tabs/plots_tabs/plots_tabs_orchestrator.py`)
 
 The plots area is split across several modules:
 
-- `ui/tabs/plots_tab/plots_tab.py`: dispatch/orchestrator that routes each PNG by category.
-- `ui/tabs/plots_tab/plots_happiness_tab.py`: happiness plot tabs.
-- `ui/tabs/plots_tab/plots_spectrum_tab.py`: spectrum plot tabs.
-- `ui/tabs/plots_tab/plots_team_tab.py`: team analysis plot tabs.
-- `ui/tabs/plots_tab/plots_generic_tab.py`: fallback tabs for other plot files.
-- `ui/tabs/plots_tab/plots_base_tab.py`: shared image tab rendering logic.
+- `ui/tabs/plots_tabs/plots_tabs_orchestrator.py`: dispatch/orchestrator that routes each PNG by category.
+- `ui/tabs/plots_tabs/plots_happiness_tab.py`: happiness plot tabs.
+- `ui/tabs/plots_tabs/plots_spectrum_tab.py`: spectrum plot tabs.
+- `ui/tabs/plots_tabs/plots_team_tab.py`: team analysis plot tabs.
+- `ui/tabs/plots_tabs/plots_generic_tab.py`: fallback tabs for other plot files.
+- `ui/tabs/plots_tabs/plots_base_tab.py`: shared image tab rendering logic.
 
 One tab per PNG file generated in the plots directory.
 

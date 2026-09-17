@@ -1,3 +1,13 @@
+# Next version
+## What's new?
+- **Web app**: the whole app now also runs in the browser, on a phone or a computer. Players, settings and sessions stay in your browser, and sessions can be saved as a `.json` file.
+- **Better balanced rounds**: the optimisation now really compares whole rounds. Sessions come out happier and more even.
+## Bug fixes
+- The level noise in level rounds now actually mixes players close to a level boundary.
+- Forcing preferred pairs no longer leaves the happiness of later rounds out of date.
+- The Excel summary now matches the players' happiness right after generation, and teams are in the same order as on screen.
+- Names starting with an accented capital letter no longer break the session games image.
+
 
 # Version 1.7.0
 ## What's new?
