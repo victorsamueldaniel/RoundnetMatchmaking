@@ -307,6 +307,12 @@ def _affected_game_idxs(pos_a, pos_b):
     return game_idxs
 
 
+def _recalculate_from(session, round_idx):
+    """Recompute happiness for a round and every later round, which depend on its history."""
+    for idx in range(round_idx, len(session.rounds)):
+        session.rounds[idx].recalculate_happiness(idx)
+
+
 def _evaluate_swap_score(round_obj, round_idx, pos_a, pos_b, session, lambda_weight):
     """Evaluate a candidate swap and return the resulting session score, or None if invalid.
 
@@ -331,12 +337,12 @@ def _evaluate_swap_score(round_obj, round_idx, pos_a, pos_b, session, lambda_wei
         return None
 
     # --- Recalculate happiness (rebuilds team objects, updates all histories) ---
-    round_obj.recalculate_happiness(round_idx)
+    _recalculate_from(session, round_idx)
 
     # --- Gender preference check ---
     if not all(g.is_gender_preference_satisfied for g in round_obj.games):
         round_obj.swap_player_positions(pos_a, pos_b)
-        round_obj.recalculate_happiness(round_idx)
+        _recalculate_from(session, round_idx)
         return None
 
     # --- Compute score ---
@@ -344,7 +350,7 @@ def _evaluate_swap_score(round_obj, round_idx, pos_a, pos_b, session, lambda_wei
 
     # --- Always undo ---
     round_obj.swap_player_positions(pos_a, pos_b)
-    round_obj.recalculate_happiness(round_idx)
+    _recalculate_from(session, round_idx)
     return score
 
 
@@ -487,7 +493,7 @@ def force_preferred_pairs_in_session(
 
         pair_idx, round_idx, round_obj, pos_a, pos_b = best_candidate
         round_obj.swap_player_positions(pos_a, pos_b)
-        round_obj.recalculate_happiness(round_idx)
+        _recalculate_from(session, round_idx)
         needed[pair_idx] -= 1
 
     # Refresh session-level cached statistics

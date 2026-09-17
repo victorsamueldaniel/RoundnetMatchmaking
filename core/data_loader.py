@@ -155,12 +155,18 @@ def load_data() -> pd.DataFrame:
     """Read the single players xlsx, resolve missing data, return main_df."""
     cfg = load_xlsx_config()
     path = os.path.join(_xlsx_dir, cfg["players"])
+    return load_players_frame(path)
 
-    errs = validate_xlsx(path)
+
+def load_players_frame(source) -> pd.DataFrame:
+    """Read a players xlsx (path or file-like object) and return the normalised DataFrame."""
+    errs = validate_xlsx(source)
     if errs:
         raise ValueError("Players file failed validation:\n  • " + "\n  • ".join(errs))
+    if hasattr(source, "seek"):
+        source.seek(0)
 
-    df = pd.read_excel(path)
+    df = pd.read_excel(source)
     df.columns = [str(c).strip() for c in df.columns]
     df = _apply_aliases(df)
 

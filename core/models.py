@@ -1657,6 +1657,7 @@ class GamesRound:
                     team2,
                     type_preference=self.type_preference,
                     gender_preference=self.gender_preference,
+                    weight_same_teammate=self.weight_same_teammate,
                 )
                 self.games.append(game)
                 game.update_players_happiness(
@@ -2729,7 +2730,7 @@ class SessionOfRounds:
     def export_to_excel(
         self,
         directory=None,
-        date_str=datetime.datetime.now().strftime("%d_%m_%Y"),
+        date_str=None,
         filename=None,
     ):
         """
@@ -2742,6 +2743,10 @@ class SessionOfRounds:
         Returns:
         - str: Path to the saved file
         """
+
+        if date_str is None:
+            date_str = datetime.datetime.now().strftime("%d_%m_%Y")
+        self.recalculate_session_statistics()
 
         # Create directory if it doesn't exist
         if directory is None:
@@ -2835,7 +2840,7 @@ class SessionOfRounds:
 
                 # Game data
                 for game_idx, game in enumerate(round.games, start=1):
-                    team_A, team_B = list(game.teams)
+                    team_A, team_B = game.team_A, game.team_B
                     team_A_players = [p.name for p in team_A.players]
                     team_B_players = [p.name for p in team_B.players]
 
@@ -3047,7 +3052,7 @@ class SessionOfRounds:
         print(f"Session exported successfully to: {filepath}")
 
         # Create read-only version
-        readonly_filename = f"session_{date_str}_read_only.xlsx"
+        readonly_filename = filename[: -len(".xlsx")] + "_read_only.xlsx"
         readonly_filepath = os.path.join(directory, readonly_filename)
 
         # Copy the workbook for read-only version
@@ -3078,13 +3083,15 @@ class SessionOfRounds:
 
     def save_session_of_rounds(
         self,
-        date_str=datetime.datetime.now().strftime("%d_%m_%Y"),
+        date_str=None,
         main_folder="sessions",
         export_to_excel=True,
         create_plots=True,
         **kwargs,
     ):
 
+        if date_str is None:
+            date_str = datetime.datetime.now().strftime("%d_%m_%Y")
         # Create the session folder path
         session_folder = os.path.join(main_folder, date_str)
         # Create the folder if it doesn't exist, or find an available suffix
