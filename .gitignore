@@ -48,6 +48,7 @@ sessions/
 ui/main/sessions/
 ui/xlsx/
 fusion_xlsx/
+BUG/
 
 # Misc generated archives/logs
 *.log
