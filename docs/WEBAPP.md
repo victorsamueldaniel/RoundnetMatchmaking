@@ -37,7 +37,7 @@ A session is saved as JSON instead of a pickle file:
   "version": 1,
   "seed": 3,
   "players": [{"id": "Alice", "Name": "Alice", "Level": 2.5, "Gender": "Female", "Prey": 5, "...": 5}],
-  "params": {"lambda_weight": 2.0, "percentile": 33, "level_gap_tol": 1.1, "extra_parameters": {}},
+  "params": {"lambda_weight": 2.0, "percentile": 33, "level_gap_tol": 0.7, "extra_parameters": {}},
   "preferred_pairs": [{"players": ["Alice", "Bob"], "games": 2}],
   "rounds": [
     {"type_preference": "balanced", "gender_preference": "open",

@@ -46,7 +46,7 @@ _UI_DEFAULTS: dict = {
     "schema_version": _SCHEMA_VERSION,
     "num_rounds": 4,
     "games_per_round": "auto",
-    "level_gap_tol": 1.1,
+    "level_gap_tol": 0.7,
     "level_round_play_priority": 1.0,
     "lambda_weight": 2.0,
     "percentile": 33,

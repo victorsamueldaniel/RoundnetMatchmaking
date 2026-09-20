@@ -9,7 +9,6 @@ import pandas as pd
 import tkinter as tk
 from tkinter import filedialog, ttk
 
-
 if getattr(sys, "frozen", False):
     _xlsx_dir = os.path.join(os.path.dirname(sys.executable), "xlsx")
 else:

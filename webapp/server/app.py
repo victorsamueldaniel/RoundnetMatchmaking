@@ -96,7 +96,7 @@ class GenerateRequest(BaseModel):
     type_preferences: list[str]
     gender_preferences: list[str]
     games_per_round: int | None = Field(default=None, ge=1, le=50)
-    level_gap_tol: float = 1.1
+    level_gap_tol: float = 0.7
     lambda_weight: float = 2.0
     percentile: float = Field(default=33, ge=0, le=100)
     female_shift: float = 0.0

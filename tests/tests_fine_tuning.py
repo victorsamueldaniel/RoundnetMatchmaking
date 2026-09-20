@@ -6,7 +6,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.fine_tuning_functions import *
 from importlib import reload
 
-
 df = main.main_df.loc[
     # [
     #     "VictorDa",
@@ -139,7 +138,7 @@ reload(main)
 
 # Sweep over num_iter to see how optimization iterations affect happiness
 lambda_weight = 0.5  # Fixed lambda_weight for this sweep
-level_gap_tol = 1.1  # Fixed level_gap_tol for this sweep
+level_gap_tol = 0.7  # Fixed level_gap_tol for this sweep
 
 num_iter_to_happiness, session_of_rounds = run_parameter_sweep(
     df=df,
@@ -186,7 +185,7 @@ num_iter_to_happiness, session_of_rounds = run_parameter_sweep(
 # %%
 
 # Sweep over lambda_weight to find optimal balance between mean and std happiness
-level_gap_tol = 1.1  # Fixed level_gap_tol for this sweep
+level_gap_tol = 0.7  # Fixed level_gap_tol for this sweep
 num_iter = 435  # Fixed num_iter for this sweep
 
 lambda_weight_to_happiness, session_of_rounds = run_parameter_sweep(
@@ -230,7 +229,7 @@ lambda_weight_to_happiness, session_of_rounds = run_parameter_sweep(
 ################################################################################
 # %%
 # Sweep over lambda_weight to find optimal balance between mean and std happiness
-level_gap_tol = 1.1  # Fixed level_gap_tol for this sweep
+level_gap_tol = 0.7  # Fixed level_gap_tol for this sweep
 num_iter = 300  # Fixed num_iter for this sweep
 lambda_weight = 2.3  # Fixed lambda_weight for this sweep
 session_kwargs = {
