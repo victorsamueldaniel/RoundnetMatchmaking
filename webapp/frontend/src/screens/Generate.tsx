@@ -5,10 +5,17 @@ import { Button, Card, Modal, Notice, Segmented, Slider } from '../components/ui
 import { renderAnsi } from '../lib/ansi'
 import { dateStamp, downloadBlob } from '../lib/download'
 import { byName, median, quantile } from '../lib/format'
+import { effectivePlayers } from '../store'
 import { CONFIRMABLE_LABELS, unsavedKeys, useStore } from '../store'
 import type { RoundGender, RoundType, SessionDocument } from '../types'
-import { AdvancedDialog, PairsDialog, PlayerDialog, usePlayers } from './Dialogs'
+import { AdvancedDialog, PairsDialog, PlayerDialog } from './Dialogs'
 import { FileHelp, PlayerImport } from './PlayerImport'
+
+function usePlayers() {
+  const roster = useStore((s) => s.roster)
+  const overrides = useStore((s) => s.overrides)
+  return useMemo(() => effectivePlayers(roster, overrides), [roster, overrides])
+}
 
 function PlayersCard({ onEdit }: { onEdit: (id: string | null) => void }) {
   const players = usePlayers()

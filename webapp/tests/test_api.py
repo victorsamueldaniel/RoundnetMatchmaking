@@ -66,6 +66,7 @@ def test_generate_streams_progress_and_result(generated):
     kinds = [e["type"] for e in generated]
     assert kinds.count("progress") == 2
     assert kinds[-1] == "result"
+    assert generated[-1]["document"]["params"]["games_per_round"] == "auto"
     view = generated[-1]["view"]
     assert len(view["rounds"]) == 3
     assert view["charts"]["team"]["partner_edges"]

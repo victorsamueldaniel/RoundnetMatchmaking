@@ -2114,6 +2114,12 @@ class SessionOfRounds:
     ):
         self.amount_of_rounds = amount_of_rounds
         self.games_per_round_each_round = games_per_round_each_round
+        if games_per_round_each_round is None:
+            self._games_per_round_preference = "auto"
+        elif isinstance(games_per_round_each_round, int):
+            self._games_per_round_preference = str(games_per_round_each_round)
+        else:
+            self._games_per_round_preference = None
         self.players_per_team_each_round = players_per_team_each_round
         self.type_preferences = type_preferences
         self.gender_preferences = gender_preferences

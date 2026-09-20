@@ -36,6 +36,7 @@ PLAYER_FIELDS = [
 
 DEFAULT_PARAMS = {
     "level_gap_tol": 1.1,
+    "games_per_round": "auto",
     "num_iter": 435,
     "lambda_weight": 2.0,
     "percentile": 33,
@@ -67,6 +68,11 @@ def players_dataframe(players):
 
 def encode_session(session, players, params, preferred_pairs, seed=None):
     """Return the JSON document for a generated or edited session."""
+    params = dict(params or {})
+    games_per_round_pref = getattr(session, "_games_per_round_preference", None)
+    if games_per_round_pref is not None:
+        params.setdefault("games_per_round", games_per_round_pref)
+
     rounds = []
     for r in session.rounds:
         rounds.append(
@@ -133,6 +139,7 @@ def decode_session(doc):
     session.happiness_config = extra.get("happiness", {})
     session.prioritize_level_rounds = True
     session.rounds_reordering = params.get("rounds_reordering")
+    session._games_per_round_preference = params.get("games_per_round", "auto")
     session.type_preferences = [r["type_preference"] for r in doc["rounds"]]
     session.gender_preferences = [r["gender_preference"] for r in doc["rounds"]]
     session.games_per_round_each_round = [len(r["games"]) for r in doc["rounds"]]

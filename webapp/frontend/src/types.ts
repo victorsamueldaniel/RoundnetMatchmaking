@@ -28,6 +28,7 @@ export type SessionDocument = {
   seed: number | null
   players: Player[]
   params: Record<string, unknown> & {
+    games_per_round?: string | number | null
     lambda_weight?: number
     percentile?: number
     level_gap_tol?: number

@@ -60,14 +60,25 @@ def test_round_trip_keeps_happiness(with_pairs):
     if pairs:
         force_preferred_pairs_in_session(session, pairs, lambda_weight=2.4)
         apply_preferred_pairs_happiness(session, pairs)
+    session._games_per_round_preference = "auto"
 
     doc = json.loads(
-        json.dumps(encode_session(session, players, {"num_iter": 60}, pairs, seed=seed))
+        json.dumps(
+            encode_session(
+                session,
+                players,
+                {"num_iter": 60, "games_per_round": "auto"},
+                pairs,
+                seed=seed,
+            )
+        )
     )
     reloaded = decode_session(doc)
 
     expected = {p.name: p.happiness for p in session.players}
     assert {p.name: p.happiness for p in reloaded.players} == pytest.approx(expected)
+    assert doc["params"]["games_per_round"] == "auto"
+    assert reloaded._games_per_round_preference == "auto"
     assert [len(r.games) for r in reloaded.rounds] == [
         len(r.games) for r in session.rounds
     ]

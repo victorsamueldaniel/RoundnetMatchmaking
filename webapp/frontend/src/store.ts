@@ -266,7 +266,14 @@ export const useStore = create<State>()(
           const roundTypes = document.rounds?.map((r) => r.type_preference) ?? DEFAULT_TYPES.slice(0, roundCount)
           const roundGenders = document.rounds?.map((r) => r.gender_preference) ?? DEFAULT_GENDERS.slice(0, roundCount)
           const sameGames = document.rounds && document.rounds.length > 0 && document.rounds.every((r) => r.games.length === document.rounds[0].games.length)
-          const gamesPerRound = sameGames ? String(document.rounds[0].games.length) : 'auto'
+          const savedGamesPerRound = params.games_per_round
+          const gamesPerRound = typeof savedGamesPerRound === 'number'
+            ? String(savedGamesPerRound)
+            : typeof savedGamesPerRound === 'string'
+              ? savedGamesPerRound
+              : sameGames
+                ? String(document.rounds[0].games.length)
+                : 'auto'
           const settings = {
             numRounds: roundCount,
             gamesPerRound,

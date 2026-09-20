@@ -304,6 +304,9 @@ def generate(request: GenerateRequest):
     pairs = _pairs(request.preferred_pairs)
     params = {
         "level_gap_tol": request.level_gap_tol,
+        "games_per_round": (
+            request.games_per_round if request.games_per_round is not None else "auto"
+        ),
         "num_iter": int(extra["num_iter"]),
         "lambda_weight": request.lambda_weight,
         "percentile": request.percentile,
@@ -371,6 +374,7 @@ def generate(request: GenerateRequest):
                     print_progress=bool(extra.get("print_progress", True)),
                     progress_callback=progress,
                 )
+                session._games_per_round_preference = params["games_per_round"]
                 if pairs:
                     tolerance = extra["post_processing"][
                         "force_preferred_pairs_in_session"

@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { toast } from '../components/toast'
 import { Button, Modal, Notice, Segmented } from '../components/ui'
 import { byName, SPEC_HELP } from '../lib/format'
 import { downloadJson } from '../lib/download'
-import { effectivePlayers, useStore } from '../store'
+import { useStore } from '../store'
 import { SPECTRUM, type Gender, type Player, type PreferredPair } from '../types'
 
 /** Same normalisation as the xlsx import: no whitespace, first letter upper case. */
@@ -331,8 +331,3 @@ export function AdvancedDialog({ onClose }: { onClose: () => void }) {
   )
 }
 
-export function usePlayers() {
-  const roster = useStore((s) => s.roster)
-  const overrides = useStore((s) => s.overrides)
-  return useMemo(() => effectivePlayers(roster, overrides), [roster, overrides])
-}

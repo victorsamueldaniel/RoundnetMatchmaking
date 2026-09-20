@@ -2881,7 +2881,18 @@ class SessionGenerationTabMixin:
             )
 
         # --- Games per round ---
-        games_list = getattr(session, "games_per_round_each_round", None)
+        games_pref = getattr(session, "_games_per_round_preference", None)
+        if games_pref is not None:
+            try:
+                self.games_per_round_var.set(str(games_pref))
+                games_list = None
+            except Exception as exc:
+                print(
+                    f"[_apply_session_params] Could not restore saved games_per_round preference: {exc}"
+                )
+                games_list = getattr(session, "games_per_round_each_round", None)
+        else:
+            games_list = getattr(session, "games_per_round_each_round", None)
         if games_list:
             try:
                 unique = set(games_list)
@@ -3327,6 +3338,7 @@ class SessionGenerationTabMixin:
             )
             session_of_rounds._objective_percentile = percentile
             session_of_rounds._female_boost = female_shift
+            session_of_rounds._games_per_round_preference = games_per_round_setting
 
             # Save the session using save_session_of_rounds with default parameters
             try:
