@@ -235,15 +235,14 @@ export function PairsDialog({ onClose }: { onClose: () => void }) {
               onClick={() =>
                 setPending((list) => (list.includes(p.id) ? list.filter((x) => x !== p.id) : [...list, p.id].slice(-2)))
               }
-              className={`min-h-10 truncate rounded-md border px-2 text-sm ${
-                isPending
+              className={`min-h-10 truncate rounded-md border px-2 text-sm ${isPending
                   ? 'border-brand-yellow bg-brand-yellow text-black'
                   : inPair.has(p.id)
                     ? 'border-[#8B3030] bg-[#8B3030] text-white'
                     : isSelected
                       ? 'border-line bg-white text-black'
                       : 'border-line bg-raised text-muted'
-              } ${isSelected ? 'font-semibold' : ''}`}
+                } ${isSelected ? 'font-semibold' : ''}`}
             >
               {p.id}
             </button>
