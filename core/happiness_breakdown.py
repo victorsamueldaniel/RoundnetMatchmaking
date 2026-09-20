@@ -10,7 +10,6 @@ from core.models import (
     _SPEC_KEY_TO_ATTR,
     repeated_same_people_count,
     same_teammate_penalty_applies,
-    spectrum_trigger_profile,
 )
 
 
@@ -41,31 +40,26 @@ def round_breakdown(round_obj, round_idx):
 
                 spectrum = None
                 if round_obj.spectrum:
-                    triggers, _spectrum_diagnostics = spectrum_trigger_profile(
-                        player,
-                        teammates_levels,
-                        opponents_levels,
-                        sum(q.chill for q in team.players),
-                        getattr(round_obj, "session_level_spread", 0.0),
-                        round_obj.session_median_level,
-                        {
-                            "spectrum_equilibrist_relative_gap_threshold": p[
-                                "spectrum_equilibrist_level_gap_tol_multiplier"
-                            ],
-                            "spectrum_challenger_relative_gap_threshold": p[
-                                "spectrum_challenger_level_gap_tol_multiplier"
-                            ],
-                            "spectrum_classist_relative_teammate_gap_threshold": p[
-                                "spectrum_classist_level_gap_tol_multiplier"
-                            ],
-                            "spectrum_chill_players_chill_threshold": p[
-                                "spectrum_chill_players_chill_threshold"
-                            ],
-                            "spectrum_classist_requires_above_median_level": p.get(
-                                "spectrum_classist_requires_above_median_level", True
-                            ),
-                        },
-                    )
+                    team_level = np.mean(teammates_levels + [player.level])
+                    opp_mean = np.mean(opponents_levels)
+                    triggers = {
+                        "Prey": p["spectrum_prey_opponents_mean_level_multiplier"]
+                        * opp_mean
+                        >= player.level,
+                        "Equilibrist": abs(team_level - opp_mean)
+                        <= p["spectrum_equilibrist_level_gap_tol_multiplier"] * gap_tol,
+                        "Challenger": abs(
+                            p["spectrum_challenger_opponents_mean_level_multiplier"]
+                            * opp_mean
+                            - team_level
+                        )
+                        <= p["spectrum_challenger_level_gap_tol_multiplier"] * gap_tol,
+                        "Chill": sum(q.chill for q in team.players)
+                        >= p["spectrum_chill_players_chill_threshold"],
+                        "Hunter": opp_mean <= team_level,
+                        "Classist": abs(player.level - np.mean(teammates_levels))
+                        <= p["spectrum_classist_level_gap_tol_multiplier"] * gap_tol,
+                    }
                     chosen = player.spec_chosen_history[round_idx]
                     gain = (
                         getattr(player, _SPEC_KEY_TO_ATTR[chosen]) * triggers[chosen]
