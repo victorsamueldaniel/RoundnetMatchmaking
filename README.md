@@ -90,7 +90,8 @@ uvicorn webapp.server.app:app --port 8000 --reload
 ```
 Terminal 2:
 ```
-cd webapp/frontend && npm run dev                    
+cd webapp/frontend 
+npm run dev                    
 ```
 Then open http://localhost:5173.
 
