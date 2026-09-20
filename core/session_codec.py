@@ -176,6 +176,14 @@ def decode_session(doc):
         round_.happiness_config = session.happiness_config
         round_._params = round_._resolve_params()
         round_.session_median_level = median_level
+        # Compute roster spread R (p90 - p10) to match GamesRound.__init__ behavior
+        try:
+            levels = np.array([p.level for p in round_.participants], dtype=float)
+            p90 = np.percentile(levels, 90)
+            p10 = np.percentile(levels, 10)
+            round_.roster_spread_R = float(p90 - p10)
+        except Exception:
+            round_.roster_spread_R = None
         round_.weight_same_teammate = session.weight_same_teammate
         round_.iterations = []
         round_.amount_of_games = len(r["games"])

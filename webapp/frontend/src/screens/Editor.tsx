@@ -86,7 +86,7 @@ function Details({ slot, round, pending }: { slot: SlotView | undefined; round: 
             ))}
           </div>
           <p className="flex justify-between gap-4">
-            <span>→ Chosen: {b.spectrum.chosen ? SPEC_ABBREV[b.spectrum.chosen] : 'none'}</span>
+            <span>→ Chosen: {b.spectrum.chosen ? SPEC_ABBREV[b.spectrum.chosen] : 'None'}</span>
             <span className={(b.terms?.spectrum ?? 0) > 0 ? 'text-gain' : (b.terms?.spectrum ?? 0) < 0 ? 'text-loss' : 'text-muted'}>{signed(b.terms?.spectrum ?? 0, 1)}</span>
           </p>
         </>

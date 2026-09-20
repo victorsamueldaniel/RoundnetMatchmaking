@@ -457,6 +457,7 @@ class Player:
         is_gender_preference_satisfied,
         players_chill,
         session_median,
+        roster_spread_R=None,
         weight_same_teammate=4,
         same_teammate_penalty_applies=False,
         amount_same_people_in_game_history=0,
@@ -490,34 +491,47 @@ class Player:
             teammates_mean_level = np.mean(teammates_levels)
             team_level = np.mean(teammates_levels + [self.level])
             opponents_mean_level = np.mean(opponents_levels)
+            # d is defined as teammate - opponent (team mean minus opponents mean)
+            d = team_level - opponents_mean_level
+            # challenger comparison uses a scaled opponents mean so compute adjusted delta
+            d_challenger = (
+                team_level
+                - spectrum_challenger_opponents_mean_level_multiplier
+                * opponents_mean_level
+            )
+            # Compute teq and t_chlgr from roster spread R when available
+            R = None
+            try:
+                if roster_spread_R is not None:
+                    R = float(roster_spread_R)
+                    if not np.isfinite(R) or R <= 0:
+                        R = None
+            except Exception:
+                R = None
+            if R is not None:
+                t_eq = 0.1 * R
+                t_chlgr = 0.2 * R
+            else:
+                # Fallback when roster spread R is not available: derive thresholds from gap_tol
+                t_eq = spectrum_equilibrist_level_gap_tol_multiplier * level_gap_tol
+                t_chlgr = spectrum_challenger_level_gap_tol_multiplier * level_gap_tol
+
+            # Use explicit non-overlapping bands (half-open intervals) consistently
+            is_equilibrist = abs(d) < t_eq
+            is_prey = d <= -t_chlgr if t_chlgr is not None else False
+            is_hunter = d >= t_chlgr if t_chlgr is not None else False
+            is_challenger = (
+                ((-d) > t_eq and (-d) < t_chlgr) if t_chlgr is not None else False
+            )
+
             spectrum_game = {
-                "Prey": (
-                    1
-                    if spectrum_prey_opponents_mean_level_multiplier
-                    * opponents_mean_level
-                    >= self.level
-                    else 0
-                ),
-                "Equilibrist": (
-                    1
-                    if abs(team_level - opponents_mean_level)
-                    <= spectrum_equilibrist_level_gap_tol_multiplier * level_gap_tol
-                    else 0
-                ),
-                "Challenger": (
-                    1
-                    if abs(
-                        spectrum_challenger_opponents_mean_level_multiplier
-                        * opponents_mean_level
-                        - team_level
-                    )
-                    <= spectrum_challenger_level_gap_tol_multiplier * level_gap_tol
-                    else 0
-                ),
+                "Prey": 1 if is_prey else 0,
+                "Equilibrist": 1 if is_equilibrist else 0,
+                "Challenger": 1 if is_challenger else 0,
                 "Chill": (
                     1 if players_chill >= spectrum_chill_players_chill_threshold else 0
                 ),
-                "Hunter": 1 if opponents_mean_level <= team_level else 0,
+                "Hunter": 1 if is_hunter else 0,
                 "Classist": (
                     1
                     if abs(self.level - teammates_mean_level)
@@ -525,7 +539,7 @@ class Player:
                     else 0
                 ),
             }
-            best_gain = 0
+            best_gain = float("-inf")
             specs_with_best_gain = []
             # Sort specs to ensure consistent ordering
             for spec in sorted(spectrum_game.keys()):
@@ -536,11 +550,15 @@ class Player:
                 elif spec_gain == best_gain:
                     specs_with_best_gain.append(spec)
 
-            spec_chosen = random.choice(specs_with_best_gain)
-            self.happiness += (
-                getattr(self, _SPEC_KEY_TO_ATTR[spec_chosen])
-                * spectrum_game[spec_chosen]
-            )
+            # If no positive gain exists, record no chosen spec (None)
+            if best_gain <= 0:
+                spec_chosen = None
+            else:
+                spec_chosen = random.choice(specs_with_best_gain)
+                self.happiness += (
+                    getattr(self, _SPEC_KEY_TO_ATTR[spec_chosen])
+                    * spectrum_game[spec_chosen]
+                )
             self.last_spec_chosen = spec_chosen
 
         else:
@@ -764,6 +782,7 @@ class GameOfFour:
         gender_preference=None,
         minority_gender=None,
         gender_level_medians=None,
+        roster_spread_R=None,
         never_met_bonus_per_player=2,
         never_met_bonus_cap=4,
         history_cutoff_round_idx=None,
@@ -849,6 +868,7 @@ class GameOfFour:
                     minority_gender=minority_gender,
                     player_level=player.level,
                     gender_level_medians=gender_level_medians or {},
+                    roster_spread_R=roster_spread_R,
                     never_met_players_in_game_count=never_met_players_in_game_count,
                     never_met_bonus_per_player=never_met_bonus_per_player,
                     never_met_bonus_cap=never_met_bonus_cap,
@@ -951,6 +971,14 @@ class GamesRound:
         self.session_median_level = np.median(
             [player.level for player in list_of_players]
         )
+        # R: roster spread (robust) defined as p90 - p10 of player levels
+        try:
+            levels = np.array([player.level for player in list_of_players], dtype=float)
+            p90 = np.percentile(levels, 90)
+            p10 = np.percentile(levels, 10)
+            self.roster_spread_R = float(p90 - p10)
+        except Exception:
+            self.roster_spread_R = None
         self.weight_same_teammate = weight_same_teammate
         # Initialize iterations attribute to store all game combinations explored
         self.iterations = []
@@ -1127,6 +1155,7 @@ class GamesRound:
             happiness_bonus_above_median_level_type_level=p[
                 "happiness_bonus_above_median_level_type_level"
             ],
+            roster_spread_R=getattr(self, "roster_spread_R", None),
         )
 
     def _level_round_bench_priority_strength(self):

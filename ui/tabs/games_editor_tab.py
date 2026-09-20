@@ -1619,7 +1619,9 @@ class GamesEditorTabMixin:
             lines.append("  " + "  ".join(row_parts[0]))
             lines.append("  " + "  ".join(row_parts[1]))
             chosen_gain = spec_bd.get(chosen, {}).get("gain", 0) if chosen else 0
-            chosen_abbrev = _SPEC_ABBREV.get(chosen, chosen or "?")
+            chosen_abbrev = _SPEC_ABBREV.get(
+                chosen, chosen if chosen is not None else "None"
+            )
             lines.append(f"  → Chosen: {chosen_abbrev}  {chosen_gain:+.0f}")
         else:
             if bd["high_lvl_tmmt"]:

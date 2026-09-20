@@ -128,6 +128,7 @@ function InfoCard() {
   const q66 = quantile(levels, 0.66)
   const count = (test: (level: number) => boolean) => levels.filter(test).length
   const mean = levels.reduce((a, b) => a + b, 0) / (levels.length || 1)
+  const R = levels.length ? (quantile(levels, 0.9) - quantile(levels, 0.1)) : 0
 
   return (
     <Card title="Selected players info">
@@ -160,6 +161,8 @@ function InfoCard() {
             <dd className="tabular-nums">{median(levels).toFixed(2)}</dd>
             <dt>Average level</dt>
             <dd className="tabular-nums">{mean.toFixed(2)}</dd>
+            <dt>Roster spread (R)</dt>
+            <dd className="tabular-nums">{R.toFixed(2)}</dd>
           </dl>
           <details>
             <summary className="cursor-pointer text-muted">Players in selection order</summary>
