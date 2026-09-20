@@ -42,7 +42,7 @@ const TERM_LABELS: Record<string, string> = {
   never_met: 'Never met',
   same_teammate: 'Same teammate',
   same_people: 'Same people',
-  gender_preference: 'Gender preference not satisfied',
+  gender_preference: 'Gender pref. not satisfied',
   minority: 'Minority gender',
   level_bonus: 'Level bonus',
 }
@@ -76,8 +76,9 @@ function Details({ slot, round, pending }: { slot: SlotView | undefined; round: 
               </span>
             ))}
           </div>
-          <p>
-            → Chosen: {b.spectrum.chosen ? SPEC_ABBREV[b.spectrum.chosen] : 'none'} {signed(b.terms.spectrum ?? 0, 0)}
+          <p className="flex justify-between gap-4">
+            <span>→ Chosen: {b.spectrum.chosen ? SPEC_ABBREV[b.spectrum.chosen] : 'none'}</span>
+            <span className={(b.terms?.spectrum ?? 0) > 0 ? 'text-gain' : (b.terms?.spectrum ?? 0) < 0 ? 'text-loss' : 'text-muted'}>{signed(b.terms?.spectrum ?? 0, 1)}</span>
           </p>
         </>
       )}
@@ -240,13 +241,12 @@ export function EditorScreen() {
         key={name}
         onClick={() => pick({ round, name })}
         onMouseEnter={() => setFocus({ round, name })}
-        className={`flex min-h-16 min-w-0 flex-1 flex-col items-center justify-center rounded-md border px-1 py-1 text-center text-xs leading-tight transition-colors ${
-          selected
-            ? 'border-brand-yellow bg-brand-yellow text-black ring-2 ring-brand-yellow'
-            : sad
-              ? 'border-black bg-black text-white'
-              : 'border-black/10 bg-white text-black'
-        }`}
+        className={`flex min-h-16 min-w-0 flex-1 flex-col items-center justify-center rounded-md border px-1 py-1 text-center text-xs leading-tight transition-colors ${selected
+          ? 'border-brand-yellow bg-brand-yellow text-black ring-2 ring-brand-yellow'
+          : sad
+            ? 'border-black bg-black text-white'
+            : 'border-black/10 bg-white text-black'
+          }`}
         style={!selected && !sad && background ? { background } : undefined}
       >
         <span className="w-full truncate font-semibold">{name}</span>
