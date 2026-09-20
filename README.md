@@ -74,7 +74,8 @@ The server is stateless: players, settings, advanced parameters, and recent sess
 browser unless you export them.
 
 For frontend development with hot reload, run the API and the Vite dev server side by side:
-terminal 1, repo root
+
+Terminal 1, repo root:
 ```bash
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
@@ -87,10 +88,11 @@ cd ../..
 
 uvicorn webapp.server.app:app --port 8000 --reload   
 ```
-terminal 2, open http://localhost:5173
+Terminal 2:
 ```
 cd webapp/frontend && npm run dev                    
 ```
+Then open http://localhost:5173.
 
 The Vite dev server forwards `/api` calls to port 8000.
 
