@@ -10,6 +10,7 @@ import type {
   SessionDocument,
   SessionView,
 } from './types'
+import { SPECTRUM } from './types'
 
 export type Tab = 'generate' | 'editor' | 'games' | 'plots' | 'contact'
 
@@ -206,13 +207,98 @@ export const useStore = create<State>()(
       discardConfirmable: (keys) => set((s) => Object.fromEntries(keys.map((k) => [k, s.saved[k]]))),
       setExtraParameters: (value) => set({ extraParameters: value }),
       openSession: (document, view, label, remember = true) =>
-        set((s) => ({
-          document,
-          view,
-          history: [{ score: view.summary.score, document }],
-          pendingSwaps: [],
-          recent: remember ? [{ savedAt: new Date().toISOString(), label, document }, ...s.recent].slice(0, MAX_RECENT) : s.recent,
-        })),
+        set((s) => {
+          const incoming = document.players ?? []
+          const params = document.params ?? {}
+          const shift = (params.female_shift as number) ?? 0
+
+          // If the session had a female_shift applied at generation time, revert it
+          // for display in the Session tab so levels aren't permanently mutated.
+          const adjustedIncoming: Player[] = incoming.map((p) => {
+            if (!shift) return p
+            if (p.Gender === 'Female' && typeof p.Level === 'number' && p.Level !== null) {
+              return { ...p, Level: (p.Level as number) - shift }
+            }
+            return p
+          })
+
+          const revertedCount = adjustedIncoming.reduce((acc, p, i) => {
+            const orig = incoming[i]
+            return acc + ((orig.Gender === 'Female' && typeof orig.Level === 'number' && orig.Level !== null && (orig.Level as number) !== (p.Level as number)) ? 1 : 0)
+          }, 0)
+
+          const selectedIds = adjustedIncoming.map((p) => p.id)
+          const existingById = new Map(s.roster.map((p) => [p.id, p]))
+          const mergedRoster = [...s.roster]
+          const logs: string[] = []
+
+          if (shift && revertedCount > 0) {
+            logs.push(`Reverted female shift ${shift > 0 ? '-' : ''}${shift} on ${revertedCount} players`)
+          }
+
+          for (const p of adjustedIncoming) {
+            const existing = existingById.get(p.id)
+            if (!existing) {
+              mergedRoster.push(p)
+              logs.push(`Added player ${p.Name ?? p.id} (${p.id}) from session`)
+            } else {
+              const diffs: string[] = []
+              const checkKeys: (keyof Player)[] = ['Name', 'Surname', 'Level', 'Gender'] as (keyof Player)[]
+              for (const k of checkKeys) {
+                const oldV = existing[k]
+                const newV = p[k]
+                if (oldV !== newV) diffs.push(`${k}: ${oldV ?? 'null'} → ${newV ?? 'null'}`)
+              }
+              for (const spec of SPECTRUM) {
+                const oldV = (existing as any)[spec]
+                const newV = (p as any)[spec]
+                if (oldV !== newV) diffs.push(`${spec}: ${oldV ?? '0'} → ${newV ?? '0'}`)
+              }
+              if (diffs.length > 0) {
+                // replace existing entry with incoming JSON player
+                const idx = mergedRoster.findIndex((x) => x.id === p.id)
+                if (idx >= 0) mergedRoster[idx] = p
+                logs.push(`Applied JSON to ${p.Name ?? p.id} (${p.id}): ${diffs.join('; ')}`)
+              }
+            }
+          }
+          const roundCount = document.rounds?.length ?? 0
+          const roundTypes = document.rounds?.map((r) => r.type_preference) ?? DEFAULT_TYPES.slice(0, roundCount)
+          const roundGenders = document.rounds?.map((r) => r.gender_preference) ?? DEFAULT_GENDERS.slice(0, roundCount)
+          const sameGames = document.rounds && document.rounds.length > 0 && document.rounds.every((r) => r.games.length === document.rounds[0].games.length)
+          const gamesPerRound = sameGames ? String(document.rounds[0].games.length) : 'auto'
+          const settings = {
+            numRounds: roundCount,
+            gamesPerRound,
+            levelGapTol: (params.level_gap_tol as number) ?? s.settings?.levelGapTol ?? 1,
+            lambdaWeight: (params.lambda_weight as number) ?? s.settings?.lambdaWeight ?? 1,
+            percentile: (params.percentile as number) ?? s.settings?.percentile ?? 10,
+            spectrum: (params.spectrum as boolean) ?? s.settings?.spectrum ?? false,
+            roundTypes,
+            roundGenders,
+          }
+          const femaleShift = (params.female_shift as number) ?? s.femaleShift ?? 0
+          const nextConsole = logs.length
+            ? s.consoleText + '\n' + new Date().toISOString() + ' - Session load:\n' + logs.join('\n') + '\n'
+            : s.consoleText
+
+          return {
+            roster: mergedRoster,
+            overrides: {},
+            selected: selectedIds,
+            pairs: document.preferred_pairs ?? [],
+            saved: { selected: selectedIds, femaleShift, pairs: document.preferred_pairs ?? [] },
+            settings,
+            femaleShift,
+            extraParameters: params,
+            document,
+            view,
+            history: [{ score: view.summary.score, document }],
+            pendingSwaps: [],
+            recent: remember ? [{ savedAt: new Date().toISOString(), label, document }, ...s.recent].slice(0, MAX_RECENT) : s.recent,
+            consoleText: nextConsole.length > MAX_CONSOLE ? nextConsole.slice(-MAX_CONSOLE) : nextConsole,
+          }
+        }),
       clearRecent: () => set({ recent: [] }),
       commitSession: (document, view, score) =>
         set((s) => ({

@@ -15,9 +15,9 @@ const SERIES = ['#3987e5', '#d95926', '#199e70']
 const HIGHLIGHT = '#fed403'
 // One-hue sequential ramp: low values sit near the surface, high values are light.
 const SEQUENTIAL: [number, string][] = [
-  [0, '#184f95'],
-  [0.5, '#3987e5'],
-  [1, '#cde2fb'],
+  [0, '#fed403'],
+  // [0.5, '#b1b1b1'],
+  [1, '#7F0401'],
 ]
 
 const axis = (title: string, extra: Partial<Plotly.LayoutAxis> = {}): Partial<Plotly.LayoutAxis> => ({
@@ -173,7 +173,8 @@ function network(nodes: SessionView['charts']['team']['nodes'], edges: { a: stri
       x.push(at.get(e.a)!.x, at.get(e.b)!.x, null)
       y.push(at.get(e.a)!.y, at.get(e.b)!.y, null)
     }
-    return { type: 'scatter', mode: 'lines', x, y, hoverinfo: 'skip', line: { width: 1.5 * count, color: 'rgba(195,194,183,0.45)' } }
+    const edgeColor = count < 2 ? 'rgba(195, 183, 183, 0.25)' : 'rgb(218, 215, 195)'
+    return { type: 'scatter', mode: 'lines', x, y, hoverinfo: 'skip', line: { width: 1.5 * (count ** (3 / 2)), color: edgeColor } }
   })
   const maxHappiness = Math.max(...nodes.map((n) => n.happiness), 1)
   return [
