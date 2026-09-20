@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { toast } from '../components/toast'
 import { Button, Modal, Notice, Segmented } from '../components/ui'
 import { byName, SPEC_HELP } from '../lib/format'
@@ -162,7 +162,7 @@ export function PairsDialog({ onClose }: { onClose: () => void }) {
   const setPairs = useStore((s) => s.setPairs)
   const [working, setWorking] = useState<PreferredPair[]>(pairs)
   const [pending, setPending] = useState<string[]>([])
-  const sorted = useMemo(() => [...roster].sort(byName((p) => p.id)), [roster])
+  const sorted = useMemo(() => [...roster].sort(byName((p: Player) => p.id)), [roster])
   const inPair = new Set(working.flatMap((p) => p.players))
   const candidate = pending.length === 2 ? [...pending].sort() : null
   const canAdd = candidate && !working.some((p) => p.players[0] === candidate[0] && p.players[1] === candidate[1])
@@ -236,12 +236,12 @@ export function PairsDialog({ onClose }: { onClose: () => void }) {
                 setPending((list) => (list.includes(p.id) ? list.filter((x) => x !== p.id) : [...list, p.id].slice(-2)))
               }
               className={`min-h-10 truncate rounded-md border px-2 text-sm ${isPending
-                  ? 'border-brand-yellow bg-brand-yellow text-black'
-                  : inPair.has(p.id)
-                    ? 'border-[#8B3030] bg-[#8B3030] text-white'
-                    : isSelected
-                      ? 'border-line bg-white text-black'
-                      : 'border-line bg-raised text-muted'
+                ? 'border-brand-yellow bg-brand-yellow text-black'
+                : inPair.has(p.id)
+                  ? 'border-[#8B3030] bg-[#8B3030] text-white'
+                  : isSelected
+                    ? 'border-line bg-white text-black'
+                    : 'border-line bg-raised text-muted'
                 } ${isSelected ? 'font-semibold' : ''}`}
             >
               {p.id}
