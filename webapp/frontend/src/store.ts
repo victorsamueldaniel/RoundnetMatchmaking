@@ -84,6 +84,24 @@ const MAX_CONSOLE = 400_000
 const MAX_HISTORY = 30
 const MAX_RECENT = 5
 
+const normalizeSessionExtraParameters = (value: unknown, fallback: Record<string, unknown> | null) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return fallback
+  const extra = { ...(value as Record<string, unknown>) }
+  delete extra.level_gap_tol
+  delete extra.games_per_round
+  delete extra.num_iter
+  delete extra.lambda_weight
+  delete extra.percentile
+  delete extra.weight_same_teammate
+  delete extra.never_met_bonus_per_player
+  delete extra.never_met_bonus_cap
+  delete extra.spectrum
+  delete extra.female_shift
+  delete extra.rounds_reordering
+  delete extra.extra_parameters
+  return extra
+}
+
 /** localStorage that never throws: a full or blocked storage must not break the app. */
 let storageWarned = false
 const safeStorage = {
@@ -297,7 +315,7 @@ export const useStore = create<State>()(
             saved: { selected: selectedIds, femaleShift, pairs: document.preferred_pairs ?? [] },
             settings,
             femaleShift,
-            extraParameters: params,
+            extraParameters: normalizeSessionExtraParameters(params.extra_parameters, s.extraDefaults ?? s.extraParameters),
             document,
             view,
             history: [{ score: view.summary.score, document }],
