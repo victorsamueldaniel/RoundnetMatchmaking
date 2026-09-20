@@ -17,6 +17,7 @@ from core.models import (
     SessionOfRounds,
     TeamOfTwo,
     mean_min_max_happiness_objective,
+    normalize_preferred_pair_allowances,
 )
 
 DOCUMENT_VERSION = 1
@@ -140,6 +141,9 @@ def decode_session(doc):
     session.prioritize_level_rounds = True
     session.rounds_reordering = params.get("rounds_reordering")
     session._games_per_round_preference = params.get("games_per_round", "auto")
+    session.preferred_pair_allowances = normalize_preferred_pair_allowances(
+        _pairs_from_document(doc)
+    )
     session.type_preferences = [r["type_preference"] for r in doc["rounds"]]
     session.gender_preferences = [r["gender_preference"] for r in doc["rounds"]]
     session.games_per_round_each_round = [len(r["games"]) for r in doc["rounds"]]
@@ -167,6 +171,7 @@ def decode_session(doc):
         round_.objective_function = objective
         round_.never_met_bonus_per_player = session.never_met_bonus_per_player
         round_.never_met_bonus_cap = session.never_met_bonus_cap
+        round_.preferred_pair_allowances = session.preferred_pair_allowances
         round_.game_optimization = session.game_optimization
         round_.happiness_config = session.happiness_config
         round_._params = round_._resolve_params()
@@ -185,6 +190,7 @@ def decode_session(doc):
                     type_preference=round_.type_preference,
                     gender_preference=round_.gender_preference,
                     weight_same_teammate=session.weight_same_teammate,
+                    preferred_pair_allowances=session.preferred_pair_allowances,
                 )
             )
         round_.not_playing = [by_name[n] for n in r["bench"]]
@@ -200,6 +206,13 @@ def decode_session(doc):
 
 def recompute_session(session, preferred_pairs):
     """Recompute happiness, histories, games played and stats from the round structure."""
+    preferred_pair_allowances = normalize_preferred_pair_allowances(preferred_pairs)
+    session.preferred_pair_allowances = preferred_pair_allowances
+    for round_ in session.rounds:
+        round_.preferred_pair_allowances = preferred_pair_allowances
+        for game in round_.games:
+            game.preferred_pair_allowances = preferred_pair_allowances
+
     num_rounds = len(session.rounds)
     for player in session.players:
         player.happiness = 0

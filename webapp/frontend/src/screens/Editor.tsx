@@ -8,6 +8,15 @@ import type { RoundDoc, SessionDocument, SessionView, SlotView } from '../types'
 
 type Slot = { round: number; name: string }
 
+function pendingScoreColor(delta: number) {
+  if (Math.abs(delta) < 0.05) return null
+  const t = Math.min(Math.abs(delta) / 20, 1)
+  const target = delta > 0 ? [10, 122, 48] : [168, 24, 24]
+  const base = [46, 46, 46]
+  const channel = (lo: number, hi: number) => Math.round(lo + (hi - lo) * t)
+  return `rgb(${channel(base[0], target[0])}, ${channel(base[1], target[1])}, ${channel(base[2], target[2])})`
+}
+
 /** Swap two players inside one round of a session document (teams or bench). */
 export function applySwaps(document: SessionDocument, swaps: PendingSwap[]): SessionDocument {
   if (!swaps.length) return document
@@ -215,12 +224,15 @@ export function EditorScreen() {
 
   const lambda = Number(document.params.lambda_weight ?? 2)
   const percentile = Number(document.params.percentile ?? 33)
-  const focusedSlot = focus ? slotIn(pendingRounds.has(focus.round) ? preview : view, focus.round, focus.name) : undefined
+  const pendingScore = swaps.length ? preview?.summary.score ?? null : null
+  const pendingScoreDelta = pendingScore !== null ? pendingScore - view.summary.score : 0
+  const pendingScoreBg = pendingScore !== null ? pendingScoreColor(pendingScoreDelta) : null
+  const focusedSlot = focus ? slotIn(preview ?? view, focus.round, focus.name) : undefined
 
   const renderPlayer = (name: string, round: number, benched: boolean) => {
-    const pending = pendingRounds.has(round)
     const base = slotIn(view, round, name)
-    const now = pending ? slotIn(preview, round, name) : base
+    const previewSlot = slotIn(preview, round, name)
+    const now = previewSlot ?? base
     const selected = selection.some((s) => s.name === name && s.round === round)
     const sad = benched && overBenched.has(name)
     let background: string | null = null
@@ -228,7 +240,7 @@ export function EditorScreen() {
     if (!benched) {
       const spec = view.rounds[round] && document.params.spectrum !== false ? now?.spec : null
       middle = spec ? SPEC_ABBREV[spec] : ''
-      if (pending && preview) {
+      if (previewSlot) {
         const delta = (now?.gain ?? 0) + (now?.pair_bonus ?? 0) - ((base?.gain ?? 0) + (base?.pair_bonus ?? 0))
         background = deltaColor(delta)
         if (background) middle = `${middle} [${signed(delta)}]`.trim()
@@ -345,13 +357,24 @@ export function EditorScreen() {
         <aside className="space-y-4">
           <Card title="Pending changes">
             {swaps.length ? (
-              <ol className="space-y-1 text-sm">
-                {swaps.map((s, i) => (
-                  <li key={i}>
-                    {i + 1}. Round {s.round + 1}: {s.a} ↔ {s.b}
-                  </li>
-                ))}
-              </ol>
+              <>
+                <ol className="space-y-1 text-sm">
+                  {swaps.map((s, i) => (
+                    <li key={i}>
+                      {i + 1}. Round {s.round + 1}: {s.a} ↔ {s.b}
+                    </li>
+                  ))}
+                </ol>
+                <p className="mt-3 text-sm">
+                  Pending score:{' '}
+                  <span
+                    className="rounded px-1.5 py-0.5 font-mono tabular-nums text-white"
+                    style={pendingScoreBg ? { background: pendingScoreBg } : undefined}
+                  >
+                    {pendingScore !== null ? pendingScore.toFixed(3) : '…'}
+                  </span>
+                </p>
+              </>
             ) : (
               <p className="text-sm text-muted">No changes yet</p>
             )}

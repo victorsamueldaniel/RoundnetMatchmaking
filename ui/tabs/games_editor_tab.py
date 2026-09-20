@@ -30,6 +30,27 @@ _SPEC_KEY_TO_ATTR = {
 }
 
 
+def _pending_score_delta_to_bg(delta):
+    """Return a slower, score-specific background ramp for pending score chips."""
+    THRESHOLD = 0.05
+    CAP = 20.0
+
+    if abs(delta) < THRESHOLD:
+        return "#2E2E2E"
+
+    t = min(abs(delta) / CAP, 1.0)
+
+    def lerp_channel(lo, hi, amount):
+        return int(lo + (hi - lo) * amount)
+
+    base = (46, 46, 46)
+    target = (10, 122, 48) if delta > 0 else (168, 24, 24)
+    r = lerp_channel(base[0], target[0], t)
+    g = lerp_channel(base[1], target[1], t)
+    b = lerp_channel(base[2], target[2], t)
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
 class GamesEditorTabMixin:
     def _ensure_games_editor_button_config(self):
         """Ensure token-based text/style maps exist for button presentation."""
@@ -971,18 +992,27 @@ class GamesEditorTabMixin:
         """
         return games_editor_delta_to_bg(delta)
 
-    def _preview_happiness_delta(self, round_idx):
-        """Simulate recalculate_happiness for round_idx without permanently changing state.
+    def _preview_happiness_deltas(self, start_round_idx=None):
+        """Simulate recalculation from start_round_idx through later rounds.
 
-        Returns a dict {player_name: delta} where delta is the change in
-        happiness_gained for that round compared to the stored baseline.
+        Returns two dicts keyed by round index plus the preview score:
+          - preview_deltas_by_round: {round_idx: {player_name: delta}}
+          - preview_specs_by_round: {round_idx: {player_name: spec_name_or_None}}
+          - preview_score: score using the editor's configured score metric
         """
         if not hasattr(self, "session_of_rounds") or self.session_of_rounds is None:
-            return {}
+            return {}, {}, None
         if not hasattr(self, "_editor_baseline_gains"):
-            return {}
+            return {}, {}, None
 
-        game_round = self.session_of_rounds.rounds[round_idx]
+        if start_round_idx is None:
+            pending_rounds = [
+                c["round_idx"] for c in getattr(self, "pending_changes", [])
+            ]
+            if not pending_rounds:
+                return {}, {}, None
+            start_round_idx = min(pending_rounds)
+
         all_players = self.session_of_rounds.players
 
         # ---- 1. Snapshot player state ----
@@ -1002,174 +1032,207 @@ class GamesEditorTabMixin:
                 "last_spec_chosen": getattr(p, "last_spec_chosen", None),
             }
 
-        # ---- 2. Snapshot game/round state ----
-        game_snapshots = []
-        for game in game_round.games:
-            game_snapshots.append(
+        # ---- 2. Snapshot session/game state ----
+        round_snapshots = []
+        for game_round in self.session_of_rounds.rounds:
+            game_snapshots = []
+            for game in game_round.games:
+                game_snapshots.append(
+                    {
+                        "team_A": game.team_A,
+                        "team_B": game.team_B,
+                        "teams": set(game.teams),
+                        "participants": frozenset(game.participants),
+                        "team_A_mean_level": game.team_A_mean_level,
+                        "team_B_mean_level": game.team_B_mean_level,
+                        "overall_mean_level": game.overall_mean_level,
+                        "level_difference": game.level_difference,
+                        "is_gender_preference_satisfied": game.is_gender_preference_satisfied,
+                    }
+                )
+            round_snapshots.append(
                 {
-                    "team_A": game.team_A,
-                    "team_B": game.team_B,
-                    "teams": set(game.teams),
-                    "participants": frozenset(game.participants),
-                    "team_A_mean_level": game.team_A_mean_level,
-                    "team_B_mean_level": game.team_B_mean_level,
-                    "overall_mean_level": game.overall_mean_level,
-                    "level_difference": game.level_difference,
-                    "is_gender_preference_satisfied": game.is_gender_preference_satisfied,
+                    "games": game_snapshots,
+                    "teams": set(game_round.teams),
                 }
             )
-        round_teams_snapshot = set(game_round.teams)
 
-        # ---- 3. Run simulation ----
-        try:
-            game_round.recalculate_happiness(round_idx=round_idx)
-        except Exception:
-            pass
-
-        # ---- 4. Read new gains ----
-        new_gains = {}
-        for p in all_players:
-            if round_idx < len(p.happiness_gained_history):
-                new_gains[p.name] = p.happiness_gained_history[round_idx]
-            else:
-                new_gains[p.name] = None
-
-        # ---- 4b. Capture simulated spec chosen per player ----
-        preview_specs = {
-            p.name: getattr(p, "last_spec_chosen", None) for p in all_players
+        pair_awards_snapshot = {
+            name: list(values)
+            for name, values in getattr(
+                self.session_of_rounds, "_pair_happiness_per_round", {}
+            ).items()
+        }
+        session_stats_snapshot = {
+            "mean_happiness": getattr(self.session_of_rounds, "mean_happiness", None),
+            "std_happiness": getattr(self.session_of_rounds, "std_happiness", None),
+            "max_and_min_happiness": getattr(
+                self.session_of_rounds, "max_and_min_happiness", None
+            ),
+            "max_happiness_difference": getattr(
+                self.session_of_rounds, "max_happiness_difference", None
+            ),
+            "least_happy_players": list(
+                getattr(self.session_of_rounds, "least_happy_players", [])
+            ),
+            "happiest_players": list(
+                getattr(self.session_of_rounds, "happiest_players", [])
+            ),
         }
 
-        # ---- 4.5. Compute pair bonus deltas for this round ----
-        # happiness_gained_history only tracks game-mechanics gains; the pair bonus
-        # lives separately in player.happiness.  We compute its expected change here
-        # so the preview colour correctly reflects pair-related happiness shifts.
-        pair_bonus_deltas = {}
-        if getattr(self, "preferred_pairs", None) and hasattr(
-            self.session_of_rounds, "_pair_happiness_per_round"
-        ):
-            per_round = self.session_of_rounds._pair_happiness_per_round
-            never_met_per_player = 2
-            if self.session_of_rounds.rounds:
-                never_met_per_player = getattr(
-                    self.session_of_rounds.rounds[0], "never_met_bonus_per_player", 2
+        preview_deltas_by_round = {}
+        preview_specs_by_round = {}
+        preview_score = None
+
+        try:
+            for round_idx in range(start_round_idx, len(self.session_of_rounds.rounds)):
+                self.session_of_rounds.rounds[round_idx].recalculate_happiness(
+                    round_idx=round_idx
                 )
-            player_by_name = {p.name: p for p in all_players}
-            for pair_entry in self.preferred_pairs:
-                if (
-                    isinstance(pair_entry, (tuple, list))
-                    and len(pair_entry) == 2
-                    and isinstance(pair_entry[1], (int, float))
-                ):
-                    _pair_fs = frozenset(pair_entry[0])
-                    _n = max(1, int(pair_entry[1]))
-                else:
-                    _pair_fs = frozenset(pair_entry)
-                    _n = 1
-                if len(_pair_fs) != 2:
+
+            preview_pair_awards = pair_awards_snapshot
+            if getattr(self, "preferred_pairs", None) and main_module is not None:
+                for _player in self.session_of_rounds.players:
+                    _player.happiness -= sum(pair_awards_snapshot.get(_player.name, []))
+                main_module.apply_preferred_pairs_happiness(
+                    self.session_of_rounds, self.preferred_pairs
+                )
+                preview_pair_awards = {
+                    name: list(values)
+                    for name, values in getattr(
+                        self.session_of_rounds, "_pair_happiness_per_round", {}
+                    ).items()
+                }
+
+            from core.models import (
+                compute_session_score as _compute_session_score,
+            )  # noqa: PLC0415
+
+            preview_score = _compute_session_score(
+                self.session_of_rounds.players,
+                getattr(self, "_score_obj_name", None),
+                getattr(self, "_score_lw", 2.4),
+                getattr(self, "_score_pct", 10),
+            )
+
+            for round_idx in range(start_round_idx, len(self.session_of_rounds.rounds)):
+                baseline = self._editor_baseline_gains.get(round_idx, {})
+                round_deltas = {}
+                round_specs = {}
+                for p in all_players:
+                    if round_idx < len(p.happiness_gained_history):
+                        new_gain = p.happiness_gained_history[round_idx]
+                    else:
+                        new_gain = None
+                    base_gain = baseline.get(p.name)
+                    new_val = new_gain if new_gain is not None else 0.0
+                    base_val = base_gain if base_gain is not None else 0.0
+                    pair_delta = 0.0
+                    _new_awards = preview_pair_awards.get(p.name, [])
+                    _old_awards = pair_awards_snapshot.get(p.name, [])
+                    if round_idx < len(_new_awards):
+                        pair_delta += _new_awards[round_idx]
+                    if round_idx < len(_old_awards):
+                        pair_delta -= _old_awards[round_idx]
+                    round_deltas[p.name] = (new_val - base_val) + pair_delta
+                    if round_idx < len(p.spec_chosen_history):
+                        round_specs[p.name] = p.spec_chosen_history[round_idx]
+                    else:
+                        round_specs[p.name] = None
+                preview_deltas_by_round[round_idx] = round_deltas
+                preview_specs_by_round[round_idx] = round_specs
+        finally:
+            # ---- Restore player state ----
+            for p in all_players:
+                snap = player_snapshots.get(p.name)
+                if snap is None:
                     continue
-                _names = sorted(_pair_fs)
-                _pp1 = player_by_name.get(_names[0])
-                _pp2 = player_by_name.get(_names[1])
-                if _pp1 is None or _pp2 is None:
-                    continue
-                _bonus_list = [max(8, 2 * (_n - k + 2)) for k in range(_n)]
-                _pair_pfs = frozenset({_pp1, _pp2})
+                p.happiness = snap["happiness"]
+                p.happiness_gained_history = snap["happiness_gained_history"]
+                p.last_happiness_gained = snap["last_happiness_gained"]
+                p.teammate_history = snap["teammate_history"]
+                p.other_players_in_same_game_history = snap[
+                    "other_players_in_same_game_history"
+                ]
+                if hasattr(p, "spec_chosen_history"):
+                    p.spec_chosen_history = snap["spec_chosen_history"]
+                p.last_spec_chosen = snap["last_spec_chosen"]
 
-                # Old bonus this pair received for this specific round
-                _p1_awards = per_round.get(_pp1.name, [])
-                _old_bonus = _p1_awards[round_idx] if round_idx < len(_p1_awards) else 0
+            # ---- Restore game/round state ----
+            for game_round, round_snap in zip(
+                self.session_of_rounds.rounds, round_snapshots
+            ):
+                for game, snap in zip(game_round.games, round_snap["games"]):
+                    game.team_A = snap["team_A"]
+                    game.team_B = snap["team_B"]
+                    game.teams = snap["teams"]
+                    game.participants = snap["participants"]
+                    game.team_A_mean_level = snap["team_A_mean_level"]
+                    game.team_B_mean_level = snap["team_B_mean_level"]
+                    game.overall_mean_level = snap["overall_mean_level"]
+                    game.level_difference = snap["level_difference"]
+                    game.is_gender_preference_satisfied = snap[
+                        "is_gender_preference_satisfied"
+                    ]
+                game_round.teams = round_snap["teams"]
 
-                # How many rounds before round_idx were they teammates (current session state)?
-                _rounds_before = sum(
-                    1
-                    for _ri in range(round_idx)
-                    for _g in self.session_of_rounds.rounds[_ri].games
-                    for _t in _g.teams
-                    if _pair_pfs == _t.players_frozenset
-                )
+            self.session_of_rounds._pair_happiness_per_round = pair_awards_snapshot
+            for attr, value in session_stats_snapshot.items():
+                setattr(self.session_of_rounds, attr, value)
 
-                # Are they teammates in the simulated (swapped) state for this round?
-                _teammates_now = any(
-                    _pair_pfs == _t.players_frozenset
-                    for _g in game_round.games
-                    for _t in _g.teams
-                )
+        return preview_deltas_by_round, preview_specs_by_round, preview_score
 
-                if _teammates_now:
-                    _k = min(_rounds_before, len(_bonus_list) - 1)
-                    _new_bonus = _bonus_list[_k]
-                    if _rounds_before == 0:
-                        _new_bonus -= never_met_per_player
-                else:
-                    _new_bonus = 0
+    def _pending_changes_preview_score(self):
+        """Return the simulated score for the current pending editor changes."""
+        if not getattr(self, "pending_changes", None):
+            return None
+        pending_rounds = [c["round_idx"] for c in self.pending_changes]
+        if not pending_rounds:
+            return None
+        _, _, preview_score = self._preview_happiness_deltas(
+            start_round_idx=min(pending_rounds)
+        )
+        return preview_score
 
-                _delta = _new_bonus - _old_bonus
-                if _delta != 0:
-                    pair_bonus_deltas[_pp1.name] = (
-                        pair_bonus_deltas.get(_pp1.name, 0) + _delta
-                    )
-                    pair_bonus_deltas[_pp2.name] = (
-                        pair_bonus_deltas.get(_pp2.name, 0) + _delta
-                    )
+    def _preview_happiness_delta(self, round_idx):
+        """Return preview deltas/specs for one round, including earlier pending impacts."""
+        pending_rounds = [
+            c["round_idx"]
+            for c in getattr(self, "pending_changes", [])
+            if c["round_idx"] <= round_idx
+        ]
+        start_round_idx = min(pending_rounds) if pending_rounds else round_idx
+        deltas_by_round, specs_by_round, _preview_score = (
+            self._preview_happiness_deltas(start_round_idx=start_round_idx)
+        )
+        return deltas_by_round.get(round_idx, {}), specs_by_round.get(round_idx, {})
 
-        # ---- 5. Restore player state ----
-        for p in all_players:
-            snap = player_snapshots.get(p.name)
-            if snap is None:
-                continue
-            p.happiness = snap["happiness"]
-            p.happiness_gained_history = snap["happiness_gained_history"]
-            p.last_happiness_gained = snap["last_happiness_gained"]
-            p.teammate_history = snap["teammate_history"]
-            p.other_players_in_same_game_history = snap[
-                "other_players_in_same_game_history"
-            ]
-            if hasattr(p, "spec_chosen_history"):
-                p.spec_chosen_history = snap["spec_chosen_history"]
-            p.last_spec_chosen = snap["last_spec_chosen"]
-
-        # ---- 6. Restore game/round state ----
-        for game, snap in zip(game_round.games, game_snapshots):
-            game.team_A = snap["team_A"]
-            game.team_B = snap["team_B"]
-            game.teams = snap["teams"]
-            game.participants = snap["participants"]
-            game.team_A_mean_level = snap["team_A_mean_level"]
-            game.team_B_mean_level = snap["team_B_mean_level"]
-            game.overall_mean_level = snap["overall_mean_level"]
-            game.level_difference = snap["level_difference"]
-            game.is_gender_preference_satisfied = snap["is_gender_preference_satisfied"]
-        game_round.teams = round_teams_snapshot
-
-        # ---- 7. Compute deltas vs baseline ----
-        baseline = self._editor_baseline_gains.get(round_idx, {})
-        deltas = {}
-        for name, new_gain in new_gains.items():
-            base_gain = baseline.get(name)
-            new_val = new_gain if new_gain is not None else 0.0
-            base_val = base_gain if base_gain is not None else 0.0
-            deltas[name] = (new_val - base_val) + pair_bonus_deltas.get(name, 0)
-
-        return deltas, preview_specs
-
-    def _apply_happiness_preview_colors(self, round_idx):
-        """Color all player buttons in round_idx based on simulated happiness delta."""
+    def _apply_happiness_preview_colors(self):
+        """Color all affected player buttons based on simulated downstream deltas."""
         if not hasattr(self, "game_player_buttons"):
             return
-
-        deltas, preview_specs = self._preview_happiness_delta(round_idx)
-        if not deltas:
+        pending_rounds = [c["round_idx"] for c in getattr(self, "pending_changes", [])]
+        if not pending_rounds:
             return
 
-        game_round = self.session_of_rounds.rounds[round_idx]
-        is_spectrum = getattr(game_round, "spectrum", False)
+        start_round_idx = min(pending_rounds)
+        preview_deltas_by_round, preview_specs_by_round, _preview_score = (
+            self._preview_happiness_deltas(start_round_idx=start_round_idx)
+        )
+        if not preview_deltas_by_round:
+            return
+
+        self.refresh_all_rounds()
 
         over_benched_names = self._over_benched_not_playing_names()
 
         for key, btn in list(self.game_player_buttons.items()):
             btn_round, game_idx, team_id, row, col = key
-            if btn_round != round_idx:
+            if btn_round < start_round_idx:
                 continue
+
+            game_round = self.session_of_rounds.rounds[btn_round]
+            is_spectrum = getattr(game_round, "spectrum", False)
 
             # Resolve current player from data model
             try:
@@ -1200,10 +1263,14 @@ class GamesEditorTabMixin:
                         middle_token=token,
                     )
                 else:
-                    delta = deltas.get(player.name, 0.0)
+                    delta = preview_deltas_by_round.get(btn_round, {}).get(
+                        player.name, 0.0
+                    )
                     bg, suffix = self._delta_to_bg(delta)
                     if is_spectrum:
-                        sim_spec = preview_specs.get(player.name)
+                        sim_spec = preview_specs_by_round.get(btn_round, {}).get(
+                            player.name
+                        )
                         abbrev = self._abbrev_spec(sim_spec)
                         if suffix:
                             middle = f"{abbrev} {suffix}".strip() if abbrev else suffix
@@ -1321,7 +1388,7 @@ class GamesEditorTabMixin:
 
         # -- Is this round's happiness pending (swap not yet applied)? --
         round_has_pending = any(
-            c["round_idx"] == round_idx for c in getattr(self, "pending_changes", [])
+            c["round_idx"] <= round_idx for c in getattr(self, "pending_changes", [])
         )
 
         # -- Spectrum breakdown --
@@ -1553,9 +1620,7 @@ class GamesEditorTabMixin:
             lines.append("  " + "  ".join(row_parts[1]))
             chosen_gain = spec_bd.get(chosen, {}).get("gain", 0) if chosen else 0
             chosen_abbrev = _SPEC_ABBREV.get(chosen, chosen or "?")
-            lines.append(
-                f"  → Chosen: {chosen_abbrev}  {chosen_gain:+.0f}"
-            )
+            lines.append(f"  → Chosen: {chosen_abbrev}  {chosen_gain:+.0f}")
         else:
             if bd["high_lvl_tmmt"]:
                 lines.append(f"High-lvl tmmt:  +{bd['high_lvl_tmmt']}")
@@ -1747,7 +1812,7 @@ class GamesEditorTabMixin:
         )
 
         # Apply happiness-delta preview colors to all buttons in the affected round
-        self._apply_happiness_preview_colors(round_idx)
+        self._apply_happiness_preview_colors()
 
         print(
             f"Swapped {player1.name} and {player2.name} in Round {round_idx + 1} (pending)"
@@ -1936,6 +2001,38 @@ class GamesEditorTabMixin:
                 )
                 change_label.pack(anchor=tk.W, padx=10, pady=2)
 
+            preview_score = self._pending_changes_preview_score()
+            current_score = None
+            if hasattr(self, "score_history") and self.score_history:
+                _current_entry = self.score_history[-1]
+                current_score = (
+                    _current_entry[0]
+                    if isinstance(_current_entry, tuple)
+                    else _current_entry
+                )
+            score_delta = (
+                (preview_score - current_score)
+                if preview_score is not None and current_score is not None
+                else 0.0
+            )
+            score_bg = _pending_score_delta_to_bg(score_delta)
+            preview_score_text = (
+                f"Pending score: {preview_score:.3f}"
+                if preview_score is not None
+                else "Pending score: ..."
+            )
+            preview_score_label = tk.Label(
+                self.changes_list_frame,
+                text=preview_score_text,
+                font=self.fonts["small_bold"],
+                fg="#FFFFFF",
+                bg=score_bg,
+                anchor=tk.W,
+                padx=4,
+                pady=2,
+            )
+            preview_score_label.pack(anchor=tk.W, padx=10, pady=(8, 4))
+
     def undo_last_swap(self):
         """Undo the last swap operation"""
         if not self.swap_history:
@@ -1995,9 +2092,8 @@ class GamesEditorTabMixin:
         # Re-apply happiness-delta preview colors for any rounds still pending.
         # The undo'd round was just reset to white by refresh_all_rounds(); only
         # rounds that still have pending swaps need their colours recalculated.
-        still_pending_rounds = set(c["round_idx"] for c in self.pending_changes)
-        for _r in still_pending_rounds:
-            self._apply_happiness_preview_colors(_r)
+        if self.pending_changes:
+            self._apply_happiness_preview_colors()
 
         print(f"Undid swap: {player1.name} and {player2.name} in Round {round_idx + 1}")
 

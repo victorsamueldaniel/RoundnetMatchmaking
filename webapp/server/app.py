@@ -365,6 +365,7 @@ def generate(request: GenerateRequest):
                     weight_same_teammate=params["weight_same_teammate"],
                     never_met_bonus_per_player=params["never_met_bonus_per_player"],
                     never_met_bonus_cap=params["never_met_bonus_cap"],
+                    preferred_pairs=pairs,
                     extra_parameters=extra,
                     first_seed=first_seed,
                     last_seed=last_seed,

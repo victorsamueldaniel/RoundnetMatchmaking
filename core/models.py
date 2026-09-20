@@ -139,6 +139,197 @@ def sync_session_games_played(session):
     return counts
 
 
+def normalize_preferred_pair_allowances(preferred_pairs, forced_games=1):
+    """Return {frozenset({name1, name2}): allowed_teammate_rounds}."""
+    allowances = {}
+    if not preferred_pairs:
+        return allowances
+
+    if isinstance(preferred_pairs, dict):
+        entries = preferred_pairs.items()
+    else:
+        entries = preferred_pairs
+
+    for entry in entries:
+        pair_fs = None
+        pair_forced_games = forced_games
+
+        if isinstance(preferred_pairs, dict):
+            pair_entry, pair_forced_games = entry
+            pair_fs = frozenset(pair_entry)
+        elif (
+            isinstance(entry, (tuple, list))
+            and len(entry) == 2
+            and isinstance(entry[1], (int, float))
+        ):
+            pair_fs = frozenset(entry[0])
+            pair_forced_games = int(entry[1])
+        else:
+            pair_fs = frozenset(entry)
+
+        if len(pair_fs) != 2:
+            continue
+
+        allowances[pair_fs] = max(0, int(pair_forced_games))
+
+    return allowances
+
+
+def preferred_pair_allowance(preferred_pair_allowances, player_a_name, player_b_name):
+    """Return allowed teammate rounds for a pair, defaulting to 0."""
+    if not preferred_pair_allowances:
+        return 0
+    return int(
+        preferred_pair_allowances.get(frozenset({player_a_name, player_b_name}), 0)
+    )
+
+
+def same_teammate_penalty_applies(
+    player, teammates, teammate_history, preferred_pair_allowances=None
+):
+    """Return True when a repeated teammate pairing should incur the penalty."""
+    for teammate in teammates:
+        if teammate is player:
+            continue
+        pair_history_count = sum(
+            1
+            for prior_team in teammate_history
+            if prior_team == frozenset({player, teammate})
+        )
+        allowance = preferred_pair_allowance(
+            preferred_pair_allowances, player.name, teammate.name
+        )
+        if pair_history_count >= max(1, allowance):
+            return True
+    return False
+
+
+def repeated_same_people_count(
+    player,
+    current_participants,
+    same_game_history,
+    current_teammates=None,
+    preferred_pair_allowances=None,
+):
+    """Return repeated same-game encounters, discounting allowed teammate repeats."""
+    current_teammates = current_teammates or []
+    teammate_names = {teammate.name for teammate in current_teammates}
+    repeated = 0
+
+    for other_player in current_participants:
+        if other_player is player:
+            continue
+
+        occurrences = sum(
+            1 for players_set in same_game_history if other_player in players_set
+        )
+        if other_player.name in teammate_names:
+            allowance = preferred_pair_allowance(
+                preferred_pair_allowances, player.name, other_player.name
+            )
+            occurrences = max(0, occurrences - max(0, allowance - 1))
+        repeated += occurrences
+
+    return repeated
+
+
+def compute_level_spread(levels, lower_percentile=10, upper_percentile=90):
+    """Return a robust roster spread based on the middle 80 % of levels."""
+    clean_levels = [float(level) for level in levels if level is not None]
+    if len(clean_levels) < 2:
+        return 0.0
+    lower = np.percentile(clean_levels, lower_percentile)
+    upper = np.percentile(clean_levels, upper_percentile)
+    return float(max(0.0, upper - lower))
+
+
+def _normalized_level_gap(gap, spread):
+    """Return gap / spread, with a numerical fallback for near-zero spread."""
+    try:
+        spread = float(spread)
+    except (TypeError, ValueError):
+        return 0.0
+    if not np.isfinite(spread) or spread <= 1e-9:
+        return 0.0
+    return float(gap) / spread
+
+
+def _relative_spectrum_thresholds(params):
+    """Return normalized equilibrist and prey/hunter thresholds."""
+    equilibrist_threshold = float(
+        params.get("spectrum_equilibrist_relative_gap_threshold", 0.10)
+    )
+    prey_threshold = float(
+        params.get("spectrum_challenger_relative_gap_threshold", 0.20)
+    )
+    equilibrist_threshold = max(0.0, abs(equilibrist_threshold))
+    prey_threshold = max(equilibrist_threshold, abs(prey_threshold))
+    return equilibrist_threshold, prey_threshold
+
+
+def spectrum_trigger_profile(
+    player,
+    teammates_levels,
+    opponents_levels,
+    players_chill,
+    session_level_spread,
+    session_median_level,
+    params,
+):
+    """Return normalized spectrum triggers plus diagnostics."""
+    teammates_mean_level = (
+        float(np.mean(teammates_levels)) if teammates_levels else float(player.level)
+    )
+    team_level = float(np.mean(teammates_levels + [player.level]))
+    opponents_mean_level = (
+        float(np.mean(opponents_levels)) if opponents_levels else float(player.level)
+    )
+    competitive_gap = opponents_mean_level - team_level
+    normalized_gap = _normalized_level_gap(competitive_gap, session_level_spread)
+
+    equilibrist_threshold, prey_threshold = _relative_spectrum_thresholds(params)
+    classist_threshold = float(
+        params.get("spectrum_classist_relative_teammate_gap_threshold", 0.08)
+    )
+    classist_threshold = max(0.0, abs(classist_threshold))
+    classist_requires_above_median = bool(
+        params.get("spectrum_classist_requires_above_median_level", True)
+    )
+    classist_gap = _normalized_level_gap(
+        abs(float(player.level) - teammates_mean_level), session_level_spread
+    )
+    classist_allowed = (
+        session_median_level is None
+        or not classist_requires_above_median
+        or float(player.level) > float(session_median_level)
+    )
+
+    triggers = {
+        "Prey": int(normalized_gap > prey_threshold),
+        "Equilibrist": int(abs(normalized_gap) <= equilibrist_threshold),
+        "Challenger": int(
+            equilibrist_threshold < normalized_gap <= prey_threshold
+        ),
+        "Chill": int(
+            players_chill >= float(params.get("spectrum_chill_players_chill_threshold", 10))
+        ),
+        "Hunter": int(normalized_gap < -prey_threshold),
+        "Classist": int(classist_allowed and classist_gap <= classist_threshold),
+    }
+    diagnostics = {
+        "competitive_gap": competitive_gap,
+        "normalized_competitive_gap": normalized_gap,
+        "equilibrist_threshold": equilibrist_threshold,
+        "prey_threshold": prey_threshold,
+        "classist_gap": classist_gap,
+        "classist_threshold": classist_threshold,
+        "teammates_mean_level": teammates_mean_level,
+        "team_level": team_level,
+        "opponents_mean_level": opponents_mean_level,
+    }
+    return triggers, diagnostics
+
+
 _KNOWN_OBJECTIVE_FUNCTIONS = {
     "mean_happiness_objective",
     "std_happiness_objective",
@@ -363,8 +554,9 @@ class Player:
         is_gender_preference_satisfied,
         players_chill,
         session_median,
+        session_level_spread,
         weight_same_teammate=4,
-        has_same_teammate=False,
+        same_teammate_penalty_applies=False,
         amount_same_people_in_game_history=0,
         spectrum=False,
         seed=None,
@@ -383,6 +575,7 @@ class Player:
         spectrum_equilibrist_level_gap_tol_multiplier=0.5,
         spectrum_classist_level_gap_tol_multiplier=0.5,
         spectrum_chill_players_chill_threshold=10,
+        spectrum_classist_requires_above_median_level=True,
         non_spectrum_high_level_threshold_self_level_multiplier=0.85,
         happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor=2,
         happiness_penalty_gender_preference_not_satisfied_spectrum=5,
@@ -393,44 +586,21 @@ class Player:
         initial_happiness = self.happiness
 
         if spectrum:
-            teammates_mean_level = np.mean(teammates_levels)
-            team_level = np.mean(teammates_levels + [self.level])
-            opponents_mean_level = np.mean(opponents_levels)
-            spectrum_game = {
-                "Prey": (
-                    1
-                    if spectrum_prey_opponents_mean_level_multiplier
-                    * opponents_mean_level
-                    >= self.level
-                    else 0
-                ),
-                "Equilibrist": (
-                    1
-                    if abs(team_level - opponents_mean_level)
-                    <= spectrum_equilibrist_level_gap_tol_multiplier * level_gap_tol
-                    else 0
-                ),
-                "Challenger": (
-                    1
-                    if abs(
-                        spectrum_challenger_opponents_mean_level_multiplier
-                        * opponents_mean_level
-                        - team_level
-                    )
-                    <= spectrum_challenger_level_gap_tol_multiplier * level_gap_tol
-                    else 0
-                ),
-                "Chill": (
-                    1 if players_chill >= spectrum_chill_players_chill_threshold else 0
-                ),
-                "Hunter": 1 if opponents_mean_level <= team_level else 0,
-                "Classist": (
-                    1
-                    if abs(self.level - teammates_mean_level)
-                    <= spectrum_classist_level_gap_tol_multiplier * level_gap_tol
-                    else 0
-                ),
-            }
+            spectrum_game, _spectrum_diagnostics = spectrum_trigger_profile(
+                self,
+                teammates_levels,
+                opponents_levels,
+                players_chill,
+                session_level_spread,
+                session_median,
+                {
+                    "spectrum_equilibrist_relative_gap_threshold": spectrum_equilibrist_level_gap_tol_multiplier,
+                    "spectrum_challenger_relative_gap_threshold": spectrum_challenger_level_gap_tol_multiplier,
+                    "spectrum_classist_relative_teammate_gap_threshold": spectrum_classist_level_gap_tol_multiplier,
+                    "spectrum_chill_players_chill_threshold": spectrum_chill_players_chill_threshold,
+                    "spectrum_classist_requires_above_median_level": spectrum_classist_requires_above_median_level,
+                },
+            )
             best_gain = 0
             specs_with_best_gain = []
             # Sort specs to ensure consistent ordering
@@ -476,7 +646,7 @@ class Player:
             #     self.happiness -= 1
             self.last_spec_chosen = None
 
-        self.happiness -= weight_same_teammate * has_same_teammate
+        self.happiness -= weight_same_teammate * same_teammate_penalty_applies
 
         # Penalize for repeated encounters (same opponents/teammates in a game).
         # Using /2 (instead of /3) gives a stronger nudge toward variety.
@@ -609,6 +779,7 @@ class GameOfFour:
         type_preference=None,
         gender_preference=None,
         weight_same_teammate=4,
+        preferred_pair_allowances=None,
     ):
         # Initialize the GameOfFour object with two teams and a type_preference
         self.type_preference = type_preference
@@ -636,6 +807,9 @@ class GameOfFour:
             False if self.compute_gender_preference_score() == 0 else True
         )
         self.weight_same_teammate = weight_same_teammate
+        self.preferred_pair_allowances = normalize_preferred_pair_allowances(
+            preferred_pair_allowances
+        )
 
     def compute_gender_preference_score(self):
         # return 1 if gender preference is satisfied, 0 otherwise
@@ -659,6 +833,7 @@ class GameOfFour:
     def update_players_happiness(
         self,
         session_median_level,
+        session_level_spread,
         level_gap_tol,
         spectrum,
         seed=None,
@@ -675,6 +850,7 @@ class GameOfFour:
         spectrum_equilibrist_level_gap_tol_multiplier=0.5,
         spectrum_classist_level_gap_tol_multiplier=0.5,
         spectrum_chill_players_chill_threshold=10,
+        spectrum_classist_requires_above_median_level=True,
         non_spectrum_high_level_threshold_self_level_multiplier=0.85,
         happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor=2,
         happiness_penalty_gender_preference_not_satisfied_spectrum=5,
@@ -704,9 +880,11 @@ class GameOfFour:
 
                 # Penalty for repeated teammates
                 weight_same_teammate = self.weight_same_teammate
-                has_same_teammate = any(
-                    frozenset([player, teammate]) in teammate_history
-                    for teammate in team.players
+                penalty_for_same_teammate = same_teammate_penalty_applies(
+                    player,
+                    [teammate for teammate in team.players if teammate is not player],
+                    teammate_history,
+                    self.preferred_pair_allowances,
                 )
 
                 # Build met_players once per player from their history
@@ -715,11 +893,12 @@ class GameOfFour:
                     met_players.update(players_set)
 
                 # Count repeated opponents
-                amount_same_people_in_game_history = sum(
-                    1
-                    for players_set in same_game_history
-                    for other_player in players_set
-                    if other_player in self.participants
+                amount_same_people_in_game_history = repeated_same_people_count(
+                    player,
+                    self.participants,
+                    same_game_history,
+                    [teammate for teammate in team.players if teammate is not player],
+                    self.preferred_pair_allowances,
                 )
 
                 never_met_players_in_game_count = sum(
@@ -738,8 +917,9 @@ class GameOfFour:
                     is_gender_preference_satisfied=self.is_gender_preference_satisfied,
                     players_chill=total_players_chill,
                     session_median=session_median_level,
+                    session_level_spread=session_level_spread,
                     weight_same_teammate=weight_same_teammate,
-                    has_same_teammate=has_same_teammate,
+                    same_teammate_penalty_applies=penalty_for_same_teammate,
                     amount_same_people_in_game_history=amount_same_people_in_game_history,
                     spectrum=spectrum,
                     seed=seed,
@@ -757,6 +937,7 @@ class GameOfFour:
                     spectrum_equilibrist_level_gap_tol_multiplier=spectrum_equilibrist_level_gap_tol_multiplier,
                     spectrum_classist_level_gap_tol_multiplier=spectrum_classist_level_gap_tol_multiplier,
                     spectrum_chill_players_chill_threshold=spectrum_chill_players_chill_threshold,
+                    spectrum_classist_requires_above_median_level=spectrum_classist_requires_above_median_level,
                     non_spectrum_high_level_threshold_self_level_multiplier=non_spectrum_high_level_threshold_self_level_multiplier,
                     happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor=happiness_penalty_same_people_in_game_history_weight_same_teammate_divisor,
                     happiness_penalty_gender_preference_not_satisfied_spectrum=happiness_penalty_gender_preference_not_satisfied_spectrum,
@@ -797,6 +978,7 @@ class GamesRound:
         gender_level_medians=None,
         never_met_bonus_per_player=2,
         never_met_bonus_cap=4,
+        preferred_pair_allowances=None,
         game_optimization=None,
         happiness=None,
     ):
@@ -832,6 +1014,9 @@ class GamesRound:
         self.objective_function = objective_function
         self.never_met_bonus_per_player = never_met_bonus_per_player
         self.never_met_bonus_cap = never_met_bonus_cap
+        self.preferred_pair_allowances = normalize_preferred_pair_allowances(
+            preferred_pair_allowances
+        )
         self.game_optimization = game_optimization or {}
         self.happiness_config = happiness or {}
         self._params = self._resolve_params()
@@ -844,6 +1029,9 @@ class GamesRound:
                         self.teammate_history.append(frozenset([player1, player2]))
         self.games = []
         self.session_median_level = np.median(
+            [player.level for player in list_of_players]
+        )
+        self.session_level_spread = compute_level_spread(
             [player.level for player in list_of_players]
         )
         self.weight_same_teammate = weight_same_teammate
@@ -926,16 +1114,19 @@ class GamesRound:
                 go, "spectrum.Challenger.opponents_mean_level_multiplier", 0.9
             ),
             "spectrum_challenger_level_gap_tol_multiplier": _cfg_get(
-                go, "spectrum.Challenger.level_gap_tol_multiplier", 0.5
+                go, "spectrum.Challenger.level_gap_tol_multiplier", 0.20
             ),
             "spectrum_equilibrist_level_gap_tol_multiplier": _cfg_get(
-                go, "spectrum.Equilibrist.level_gap_tol_multiplier", 0.5
+                go, "spectrum.Equilibrist.level_gap_tol_multiplier", 0.10
             ),
             "spectrum_classist_level_gap_tol_multiplier": _cfg_get(
-                go, "spectrum.Classist.level_gap_tol_multiplier", 0.5
+                go, "spectrum.Classist.level_gap_tol_multiplier", 0.08
             ),
             "spectrum_chill_players_chill_threshold": _cfg_get(
                 go, "spectrum.Chill.players_chill_threshold", 10
+            ),
+            "spectrum_classist_requires_above_median_level": _cfg_get(
+                go, "spectrum.Classist.requires_above_median_level", True
             ),
             "non_spectrum_high_level_threshold_self_level_multiplier": _cfg_get(
                 go, "non_spectrum.high_level_threshold.self_level_multiplier", 0.85
@@ -977,6 +1168,7 @@ class GamesRound:
         p = self._params
         return dict(
             session_median_level=self.session_median_level,
+            session_level_spread=self.session_level_spread,
             level_gap_tol=level_gap_tol,
             spectrum=spectrum,
             seed=seed,
@@ -1003,6 +1195,9 @@ class GamesRound:
             ],
             spectrum_chill_players_chill_threshold=p[
                 "spectrum_chill_players_chill_threshold"
+            ],
+            spectrum_classist_requires_above_median_level=p[
+                "spectrum_classist_requires_above_median_level"
             ],
             non_spectrum_high_level_threshold_self_level_multiplier=p[
                 "non_spectrum_high_level_threshold_self_level_multiplier"
@@ -1445,6 +1640,7 @@ class GamesRound:
                         type_preference=self.type_preference,
                         gender_preference=self.gender_preference,
                         weight_same_teammate=self.weight_same_teammate,
+                        preferred_pair_allowances=self.preferred_pair_allowances,
                     )
                 )
                 signature.append(
@@ -1817,6 +2013,7 @@ class GamesRound:
                     type_preference=self.type_preference,
                     gender_preference=self.gender_preference,
                     weight_same_teammate=self.weight_same_teammate,
+                    preferred_pair_allowances=self.preferred_pair_allowances,
                 )
                 self.games.append(game)
                 game.update_players_happiness(
@@ -2108,6 +2305,7 @@ class SessionOfRounds:
         weight_same_teammate=5,
         never_met_bonus_per_player=2,
         never_met_bonus_cap=4,
+        preferred_pair_allowances=None,
         extra_parameters=None,
         prioritize_level_rounds=True,
         seed=None,
@@ -2134,6 +2332,9 @@ class SessionOfRounds:
         self.weight_same_teammate = weight_same_teammate
         self.never_met_bonus_per_player = never_met_bonus_per_player
         self.never_met_bonus_cap = never_met_bonus_cap
+        self.preferred_pair_allowances = normalize_preferred_pair_allowances(
+            preferred_pair_allowances
+        )
         self.extra_parameters = extra_parameters or {}
         self.game_optimization = self.extra_parameters.get("game_optimization", {})
         self.happiness_config = self.extra_parameters.get("happiness", {})
@@ -2421,6 +2622,7 @@ class SessionOfRounds:
                     gender_level_medians=self.gender_level_medians,
                     never_met_bonus_per_player=self.never_met_bonus_per_player,
                     never_met_bonus_cap=self.never_met_bonus_cap,
+                    preferred_pair_allowances=self.preferred_pair_allowances,
                     game_optimization=self.game_optimization,
                     happiness=self.happiness_config,
                 )

@@ -52,6 +52,7 @@ def test_round_trip_keeps_happiness(with_pairs):
         num_iter=60,
         first_seed=0,
         last_seed=1,
+        preferred_pairs=pairs,
         print_progress=False,
         objective_function=lambda x: mean_min_max_happiness_objective(
             x, lambda_weight=2.4, percentile=10

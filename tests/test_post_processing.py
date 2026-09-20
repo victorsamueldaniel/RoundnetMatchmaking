@@ -10,6 +10,8 @@ from core.algorithm import (
     force_preferred_pairs_in_session,
     apply_preferred_pairs_happiness,
 )
+from core.happiness_breakdown import round_breakdown
+from core.session_codec import decode_session
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -100,6 +102,76 @@ def _build_session(df, n_rounds=2, seed=0):
         spectrum=False,
         seed=seed,
     )
+
+
+def _two_round_repeat_document(preferred_pairs):
+    players = [
+        _make_row("Alice", gender="Female"),
+        _make_row("Bob"),
+        _make_row("Carol", gender="Female"),
+        _make_row("Dave"),
+    ]
+    return {
+        "version": 1,
+        "players": [{"id": row["Name"], **row} for row in players],
+        "params": {"spectrum": False, "weight_same_teammate": 5},
+        "preferred_pairs": preferred_pairs,
+        "rounds": [
+            {
+                "type_preference": "balanced",
+                "gender_preference": "open",
+                "games": [{"team_a": ["Alice", "Bob"], "team_b": ["Carol", "Dave"]}],
+                "bench": [],
+            },
+            {
+                "type_preference": "balanced",
+                "gender_preference": "open",
+                "games": [{"team_a": ["Alice", "Bob"], "team_b": ["Carol", "Dave"]}],
+                "bench": [],
+            },
+        ],
+    }
+
+
+def _four_round_future_repeat_document(preferred_pairs):
+    players = [
+        _make_row("Alice", gender="Female"),
+        _make_row("Bob"),
+        _make_row("Carol", gender="Female"),
+        _make_row("Dave"),
+    ]
+    return {
+        "version": 1,
+        "players": [{"id": row["Name"], **row} for row in players],
+        "params": {"spectrum": False, "weight_same_teammate": 5},
+        "preferred_pairs": preferred_pairs,
+        "rounds": [
+            {
+                "type_preference": "balanced",
+                "gender_preference": "open",
+                "games": [{"team_a": ["Alice", "Bob"], "team_b": ["Carol", "Dave"]}],
+                "bench": [],
+            },
+            {
+                "type_preference": "balanced",
+                "gender_preference": "open",
+                "games": [{"team_a": ["Alice", "Carol"], "team_b": ["Bob", "Dave"]}],
+                "bench": [],
+            },
+            {
+                "type_preference": "balanced",
+                "gender_preference": "open",
+                "games": [{"team_a": ["Alice", "Dave"], "team_b": ["Bob", "Carol"]}],
+                "bench": [],
+            },
+            {
+                "type_preference": "balanced",
+                "gender_preference": "open",
+                "games": [{"team_a": ["Alice", "Bob"], "team_b": ["Carol", "Dave"]}],
+                "bench": [],
+            },
+        ],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -347,3 +419,54 @@ def test_apply_pairs_happiness_session_stats_refreshed():
     assert sess.std_happiness == pytest.approx(
         expected_std, abs=1e-9
     ), "std_happiness must be recalculated after apply_preferred_pairs_happiness"
+
+
+def test_preferred_pair_repeat_penalty_waits_until_requested_count_is_exceeded():
+    preferred = decode_session(
+        _two_round_repeat_document([{"players": ["Alice", "Bob"], "games": 2}])
+    )
+    unpreferred = decode_session(_two_round_repeat_document([]))
+
+    preferred_breakdown = round_breakdown(preferred.rounds[1], 1)
+    unpreferred_breakdown = round_breakdown(unpreferred.rounds[1], 1)
+
+    assert preferred_breakdown["Alice"]["terms"]["same_teammate"] == pytest.approx(0)
+    assert unpreferred_breakdown["Alice"]["terms"]["same_teammate"] == pytest.approx(-5)
+    assert preferred_breakdown["Bob"]["terms"]["same_teammate"] == pytest.approx(0)
+    assert unpreferred_breakdown["Bob"]["terms"]["same_teammate"] == pytest.approx(-5)
+    assert preferred_breakdown["Alice"]["terms"]["same_people"] == pytest.approx(-5)
+    assert unpreferred_breakdown["Alice"]["terms"]["same_people"] == pytest.approx(-7.5)
+
+
+def test_preferred_pair_repeat_penalty_applies_after_requested_count():
+    session = decode_session(
+        _two_round_repeat_document([{"players": ["Alice", "Bob"], "games": 1}])
+    )
+    breakdown = round_breakdown(session.rounds[1], 1)
+
+    assert breakdown["Alice"]["terms"]["same_teammate"] == pytest.approx(-5)
+    assert breakdown["Bob"]["terms"]["same_teammate"] == pytest.approx(-5)
+
+
+def test_apply_changes_to_rounds_updates_later_preferred_pair_penalties():
+    session = decode_session(
+        _four_round_future_repeat_document([{"players": ["Alice", "Bob"], "games": 2}])
+    )
+
+    before = round_breakdown(session.rounds[3], 3)
+    assert before["Alice"]["terms"]["same_teammate"] == pytest.approx(0)
+
+    round_two = session.rounds[1]
+    alice = next(p for p in session.players if p.name == "Alice")
+    bob = next(p for p in session.players if p.name == "Bob")
+    carol = next(p for p in session.players if p.name == "Carol")
+    pos_bob = round_two.find_player_position(bob)
+    pos_carol = round_two.find_player_position(carol)
+    round_two.swap_player_positions(pos_bob, pos_carol)
+
+    session.apply_changes_to_rounds([1])
+
+    after = round_breakdown(session.rounds[3], 3)
+    assert after["Alice"]["terms"]["same_teammate"] == pytest.approx(-5)
+    assert after["Alice"]["total"] < before["Alice"]["total"]
+    assert after["Bob"]["terms"]["same_teammate"] == pytest.approx(-5)
