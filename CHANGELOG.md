@@ -1,11 +1,20 @@
 # Changelog
 All notable changes to this project are documented in this file.
-## [Unreleased]
+## [2.0.0] - 2026-09-20
 ### Added
-- Web app (`webapp/`): FastAPI server on top of `core/` and a React + TypeScript client usable on phones, with every desktop feature (player import and edits, round preferences, parameters, preferred pairs, advanced parameters, streamed generation with console, games editor with live preview and happiness breakdown, round reordering, Excel/PNG/JSON/text downloads, the three chart tabs, contact and anonymised bug report). Deployable on Railway through `Dockerfile` and `railway.json`. See `docs/WEBAPP.md`.
-- `core/session_codec.py`: JSON session documents rebuilt with a full chronological happiness recompute, as a safe replacement for pickle files.
-- `core/happiness_breakdown.py`: per-term explanation of each player's happiness gain, tested against the engine.
-- `pyproject.toml` extra `web`; CI builds the web client and runs the web API tests.
+- Web app (`webapp/`): a FastAPI server on top of `core/` and a React + TypeScript client that runs on phones and computers, with feature parity for player import and edits, round preferences, preferred pairs, advanced parameters, streamed generation, games editor, round reordering, Excel/PNG/JSON/text downloads, chart tabs, contact info, and anonymised bug reports. Deployable on Railway through `Dockerfile` and `railway.json`. See `docs/WEBAPP.md`.
+- JSON session documents through `core/session_codec.py`, rebuilt with a full chronological happiness recompute as a safe alternative to pickle files for the web app.
+- `core/happiness_breakdown.py`: a per-term explanation of each player's happiness gain, tested against the engine and exposed in the web app.
+- Detailed spectrum/spec introspection: engine-side breakdown data now exposes which spectrum profile was chosen for a player, which spectrum conditions were triggered in a game, and how much that spectrum choice contributed to the round score.
+- Web packaging and CI support: `pyproject.toml` now exposes a `web` extra, CI builds the web client, and the web API test suite runs in GitHub Actions.
+
+### Changed
+- Roundnet Matchmaking is now documented and packaged as a dual-surface project: the original desktop Tkinter app plus a stateless web app backed by the same core matchmaking engine.
+- Web sessions use JSON documents instead of pickle files. This keeps session files portable across devices and avoids the code-execution risk of accepting uploaded pickles on a public server.
+- Browser storage is now a first-class persistence surface for the web app: players, settings, advanced parameters, and recent sessions stay in local storage until reset or export.
+- Spectrum/spec behavior was redefined to use explicit trigger bands instead of looser, harder-to-explain outcomes. In practice this makes the profiles easier to reason about: `Equilibrist` targets genuinely even games, `Hunter` and `Prey` trigger on clearly uneven matchups, `Challenger` now sits in the middle band between balanced and strongly one-sided games, `Classist` remains tied to close teammate level, and `Chill` is driven by the total chill level of the team.
+- The setup and documentation text now describe the spectrum profiles in user-facing language rather than leaving them as unexplained internal labels.
+- Release and deployment documentation now covers both GitHub Release desktop artifacts and Railway deployment for the web app.
 
 ### Fixed
 - Balanced rounds: `generate_all_game_combinations` samples each combination independently. The depth-first search stopped after `num_iter` leaves that all shared the same first games. On 16 synthetic sessions (13 to 27 players, 10 seeds, both versions scored with the same happiness rules) the chosen session score improved in all 16 cases (+8.1 on average) and the least happy player gained 3.5 happiness on average.
@@ -18,10 +27,16 @@ All notable changes to this project are documented in this file.
 - Excel export: teams in on-screen order, statistics computed from the players, read-only file named after the exported file, dates evaluated at call time.
 - Session games image no longer crashes on names without an ASCII capital letter.
 - Happiness by gender box plot colors for `Male` and `Female`.
+- Spectrum/spec scoring is now inspectable term by term, which makes it much easier to verify why a given player was treated as `Prey`, `Hunter`, `Equilibrist`, `Challenger`, `Chill`, or `Classist` in a round.
+- Round reordering, web session viewing, and JSON reloads all recompute happiness chronologically from the actual round structure, keeping histories and exported statistics consistent.
 
 ### Removed
 - `extra_parameters` keys `generate_all_game_combinations.max_combos.depth_0` and `depth_n` (no longer used).
 - The `temp_boost` loop in `SessionOfRounds.create_rounds`, which had no effect.
+
+### Important Notes
+- `1.7.1` is treated as the previous published release for this changelog pass, even though the repository history only contained `1.7.0` plus unreleased entries.
+- Pickle sessions remain supported in the desktop app, but the web app intentionally accepts JSON sessions only.
 
 ## [1.7.0] - ...
 - Add AI Quick Reference documentation, bug replay script, model tests, and bug reporter

@@ -4,6 +4,9 @@ Roundnet Matchmaking builds balanced roundnet sessions: several rounds of 2 vs 2
 every player gets a fair share of games, partners and opponents, based on their level, gender and
 spectrum preferences.
 
+Version 2.0.0 is the first release where the full app is available both as a desktop application
+and as a web app backed by the same Python engine.
+
 The project ships two front ends on top of the same Python engine (`core/`):
 
 - **Web app** (`webapp/`): works on a phone or a computer, and can be deployed on Railway.
@@ -24,6 +27,14 @@ The project ships two front ends on top of the same Python engine (`core/`):
 - Session games view: reorder rounds, show levels, download the games image, the Excel files
   (editable and read-only), the session file and a text report.
 - Charts: happiness overview, spectrum analysis, team analysis (partnership and opponent networks).
+
+## Release highlights in 2.0.0
+
+- Full web app with mobile-friendly workflows and Railway deployment support.
+- JSON session documents for portable, safer web session storage and reloads.
+- Better balanced-round search and multiple engine correctness fixes around histories,
+  post-processing, exports, and image generation.
+- CI coverage for both the Python backend and the web frontend build.
 
 ## Player file format
 
@@ -59,11 +70,26 @@ uvicorn webapp.server.app:app --port 8000
 Open http://localhost:8000. On a phone connected to the same network, start uvicorn with
 `--host 0.0.0.0` and open `http://<computer-ip>:8000`.
 
-For frontend development with hot reload, run the API and the Vite dev server side by side:
+The server is stateless: players, settings, advanced parameters, and recent sessions stay in the
+browser unless you export them.
 
+For frontend development with hot reload, run the API and the Vite dev server side by side:
+terminal 1, repo root
 ```bash
-uvicorn webapp.server.app:app --port 8000 --reload   # terminal 1, repo root
-cd webapp/frontend && npm run dev                    # terminal 2, open http://localhost:5173
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+python -m pip install -e ".[dev,web]"
+
+cd webapp/frontend
+npm ci
+npm run build
+cd ../..
+
+uvicorn webapp.server.app:app --port 8000 --reload   
+```
+terminal 2, open http://localhost:5173
+```
+cd webapp/frontend && npm run dev                    
 ```
 
 The Vite dev server forwards `/api` calls to port 8000.
@@ -99,6 +125,8 @@ roundnet-matchmaking
 - For development, run the module from the repo root: `python -m ui.main.roundnet_matchmaking_ui`.
 - Avoid direct file execution (`python ui/main/roundnet_matchmaking_ui.py`), which bypasses the
   package import context.
+- The desktop app still supports historical pickle-based session workflows. The web app does not:
+  it uses JSON session documents only.
 - Pre-built executables for Windows, macOS and Linux are attached to the
   [GitHub Releases](../../releases). To build one yourself:
   `python -m pip install -e ".[ui]"` then `python ui/main/build_exe.py` (output in `ui/main/dist/`).
@@ -124,6 +152,9 @@ As a temporary workaround, point `TCL_LIBRARY` and `TK_LIBRARY` to your Python `
 pytest -q                                  # engine and web API tests
 cd webapp/frontend && npm run build        # type check and build the client
 ```
+
+For a full local web-app stack during development, run the FastAPI server and the Vite dev server
+side by side as shown above in the Web app section.
 
 ## Repository layout
 

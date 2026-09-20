@@ -4,6 +4,8 @@ The web app brings every feature of the desktop app to the browser, on a phone o
 Both apps call the same Python engine (`core/`) with the same parameters, so the matchmaking
 logic is shared; only the screens differ.
 
+This is the headline addition in version 2.0.0.
+
 ## Architecture
 
 ```
@@ -27,6 +29,15 @@ core/ engine: generation, happiness, charts data, Excel and PNG export
 - A generation stops at the next seed when the browser disconnects.
 - Inputs are bounded (200 players, 20 rounds, 30 seeds, `num_iter` up to 2000, 5 MB Excel files),
   and session documents are validated before use (unknown or repeated players, invalid levels).
+
+## Release notes context
+
+- The web app is intended to cover the same user workflows as the desktop app while avoiding
+  desktop-only persistence assumptions.
+- Session upload intentionally uses JSON documents only. Pickle support remains a desktop-only
+  compatibility feature.
+- Deployment is documented for Railway because the server is stateless and does not require a
+  database or background worker.
 
 ### Session documents (`core/session_codec.py`)
 

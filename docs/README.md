@@ -1,8 +1,8 @@
 # Documentation Index
 
 ## Core Documents
-- `WEBAPP.md`: web app architecture, API, session JSON format and parity with the desktop app.
-- `BUILD_INSTRUCTIONS.md`: Windows executable packaging and release artifact workflow.
+- `WEBAPP.md`: web app architecture, API, session JSON format, deployment notes, and parity with the desktop app.
+- `BUILD_INSTRUCTIONS.md`: desktop executable packaging plus release workflow notes for the 2.0.0 dual-surface project.
 - `ITERATIONS_IMPLEMENTATION.md`: iteration-specific implementation notes.
 - `diagrams/session_creation/SESSION_CREATION_DIAGRAM.md`: generated function/data model summary for session creation.
 

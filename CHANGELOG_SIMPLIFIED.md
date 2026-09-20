@@ -1,12 +1,19 @@
-# Next version
+# Version 2.0.0 — September 20, 2026
 ## What's new?
-- **Web app**: the whole app now also runs in the browser, on a phone or a computer. Players, settings and sessions stay in your browser, and sessions can be saved as a `.json` file.
+- **Web app**: the whole app now runs in the browser on a phone or a computer, not just as a desktop app. You can import players, generate sessions, edit rounds, view charts, and download results directly from the web interface.
+- **Safer, portable session files**: web sessions are saved as `.json` files instead of pickle files, so they can be reopened on another device and are safer to handle on a public server.
+- **Railway deployment support**: the repo now includes the server, frontend build, Docker setup, and deployment docs needed to host the app online.
 - **Better balanced rounds**: the optimisation now really compares whole rounds. Sessions come out happier and more even.
+- **Clearer spectrum profiles**: the spec types were reworked so their behavior is more consistent and easier to understand.
 ## Bug fixes
 - The level noise in level rounds now actually mixes players close to a level boundary.
 - Forcing preferred pairs no longer leaves the happiness of later rounds out of date.
 - The Excel summary now matches the players' happiness right after generation, and teams are in the same order as on screen.
 - Names starting with an accented capital letter no longer break the session games image.
+
+## Important differences
+- In the web app, players, settings, and recent sessions stay in your browser until you reset or export them.
+- The desktop app can still load pickle sessions, but the web app only accepts JSON session files.
 
 
 # Version 1.7.0

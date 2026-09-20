@@ -6,11 +6,11 @@ Usage:
 
 Examples:
     python build_exe.py
-    python build_exe.py --version 1.2.0
-        -> dist folder: RoundnetMatchmaking_1_2_0/
-        -> Windows exe: RoundnetMatchmaking_1_2_0.exe
-        -> macOS app:   RoundnetMatchmaking_1_2_0.app
-        -> Linux bin:   RoundnetMatchmaking_1_2_0
+    python build_exe.py --version 2.0.0
+        -> dist folder: RoundnetMatchmaking_2_0_0/
+        -> Windows exe: RoundnetMatchmaking_2_0_0.exe
+        -> macOS app:   RoundnetMatchmaking_2_0_0.app
+        -> Linux bin:   RoundnetMatchmaking_2_0_0
 
 What it does:
 - builds a one-dir executable with PyInstaller (cross-platform)

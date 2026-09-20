@@ -2235,7 +2235,7 @@ class SessionOfRounds:
         type_preferences=["balanced", "balanced", "level", "level"],
         gender_preferences=["open", "mixed", "mixed", "open"],
         rounds_reordering=None,
-        level_gap_tol=1.1,
+        level_gap_tol=0.7,
         num_iter=435,
         spectrum=True,
         objective_function=lambda x: mean_min_max_happiness_objective(

@@ -1,6 +1,6 @@
 # UI Structure
 
-This document describes the new UI module layout and how the desktop app is composed.
+This document describes the desktop UI module layout and how the Tkinter application is composed.
 
 ## Overview
 
@@ -43,6 +43,7 @@ The UI has been split into a coordinator + tab modules architecture:
 - `SessionGenerationTabMixin`
 - `GamesEditorTabMixin`
 - `SessionGamesTabMixin`
+- `ContactTabMixin`
 - `PlotsTabMixin`
 
 This keeps tab logic isolated while preserving a single shared state object (`self`) across tabs.

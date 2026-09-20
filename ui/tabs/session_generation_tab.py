@@ -2677,7 +2677,7 @@ class SessionGenerationTabMixin:
         try:
             lgt = float(self.level_gap_tol_var.get())
         except Exception:
-            lgt = 1.1
+            lgt = 0.7
         try:
             level_round_priority = float(self.level_round_play_priority_var.get())
         except Exception:
@@ -2746,7 +2746,7 @@ class SessionGenerationTabMixin:
 
         # Scalar parameters.
         self.games_per_round_var.set(prefs.get("games_per_round", "auto"))
-        self.level_gap_tol_var.set(prefs.get("level_gap_tol", 1.1))
+        self.level_gap_tol_var.set(prefs.get("level_gap_tol", 0.7))
         self.level_round_play_priority_var.set(
             prefs.get("level_round_play_priority", 1.0)
         )
@@ -3173,7 +3173,7 @@ class SessionGenerationTabMixin:
         try:
             level_gap_tol = float(self.level_gap_tol_var.get())
         except (TypeError, ValueError):
-            level_gap_tol = 1.1
+            level_gap_tol = 0.7
 
         try:
             lambda_weight = float(self.lambda_weight_var.get())

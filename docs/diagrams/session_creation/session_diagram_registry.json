@@ -668,7 +668,7 @@
       "parameter": "level_gap_tol",
       "source": "level_gap_tol_var (UI)",
       "passed_to": "run_session_generation_with_seed_optimization(level_gap_tol)",
-      "default": "1.1",
+      "default": "0.7",
       "type": "float",
       "notes": "Tolerance for acceptable team level gaps."
     },
