@@ -36,7 +36,7 @@ PLAYER_FIELDS = [
 ]
 
 DEFAULT_PARAMS = {
-    "level_gap_tol": 1.1,
+    "level_gap_tol": 0.7,
     "games_per_round": "auto",
     "num_iter": 435,
     "lambda_weight": 2.0,

@@ -31,7 +31,7 @@ No user prompt, no opt-in.
 |---|---|---|---|
 | `num_rounds` | int | `4` | Rounds +/− buttons |
 | `games_per_round` | str or int | `"auto"` | Games/round dropdown |
-| `level_gap_tol` | float | `1.1` | Level gap tolerance slider |
+| `level_gap_tol` | float | `0.7` | Level gap tolerance slider |
 | `level_round_play_priority` | float | `1.0` | Level-round play-priority slider |
 | `lambda_weight` | float | `2.0` | Lambda weight slider |
 | `percentile` | int | `33` | Percentile slider |
