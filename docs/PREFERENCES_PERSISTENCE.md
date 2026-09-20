@@ -32,6 +32,7 @@ No user prompt, no opt-in.
 | `num_rounds` | int | `4` | Rounds +/− buttons |
 | `games_per_round` | str or int | `"auto"` | Games/round dropdown |
 | `level_gap_tol` | float | `1.1` | Level gap tolerance slider |
+| `level_round_play_priority` | float | `1.0` | Level-round play-priority slider |
 | `lambda_weight` | float | `2.0` | Lambda weight slider |
 | `percentile` | int | `33` | Percentile slider |
 | `spectrum_enabled` | bool | `true` | Spectrum toggle |
@@ -53,12 +54,12 @@ opt-in parameter requires editing only that file.
 | `female_boost` | Female level shift | `0.0` |
 | `preferred_pairs` | Preferred pairs | `[]` |
 
-### `extra_parameters.json` — developer-only knobs
+### `extra_parameters.json` — expert knobs
 
-Not exposed in the UI. Edit `extra_parameters_temp.json` directly during a session
-to try different knobs — changes are picked up on the **next Run Session click**
-without restarting the app. `extra_parameters.json` is the stable baseline read
-once at startup.
+Most keys live behind the Advanced Parameters surface or internal wiring. Edit
+`extra_parameters_temp.json` directly during a session to try different knobs —
+changes are picked up on the **next Run Session click** without restarting the
+app. `extra_parameters.json` is the stable baseline read once at startup.
 
 | Key | Default | Description |
 |---|---|---|
@@ -75,6 +76,7 @@ Advanced expert knobs are nested and use script terminology to mirror call sites
 
 - `game_optimization.games_by_level._level_sorter.sd_of_randomizer` (default `0.1`)
 - `game_optimization.games_by_level._level_sorter.round_factor` (default `1`)
+- `game_optimization.games_by_level.not_playing.level_priority_strength` (default `1`) — how strongly level rounds keep higher-level players active; `0` falls back toward the old happiness-first sit-out tie-break
 - `game_optimization.generate_all_game_combinations.max_team_combos` (default `3`)
 - `game_optimization.spectrum.Prey.opponents_mean_level_multiplier` (default `0.7`)
 - `game_optimization.spectrum.Challenger.opponents_mean_level_multiplier` (default `0.9`)

@@ -5,7 +5,9 @@ import numpy as np
 from core.models import (
     Player,
     SessionOfRounds,
+    compute_games_played_counts_from_rounds,
     mean_min_max_happiness_objective,
+    sync_session_games_played,
 )
 
 
@@ -282,12 +284,7 @@ def _get_teammate_pos(pos):
 
 def _count_games_per_player(session):
     """Return {player_name: rounds_played_count} for all players."""
-    counts = {p.name: 0 for p in session.players}
-    for round_obj in session.rounds:
-        for game in round_obj.games:
-            for participant in game.participants:
-                counts[participant.name] = counts.get(participant.name, 0) + 1
-    return counts
+    return compute_games_played_counts_from_rounds(session.rounds, session.players)
 
 
 def _balance_ok(session):
@@ -311,6 +308,7 @@ def _recalculate_from(session, round_idx):
     """Recompute happiness for a round and every later round, which depend on its history."""
     for idx in range(round_idx, len(session.rounds)):
         session.rounds[idx].recalculate_happiness(idx)
+    sync_session_games_played(session)
 
 
 def _evaluate_swap_score(round_obj, round_idx, pos_a, pos_b, session, lambda_weight):
@@ -496,18 +494,14 @@ def force_preferred_pairs_in_session(
         pair_idx, round_idx, round_obj, pos_a, pos_b = best_candidate
         round_obj.swap_player_positions(pos_a, pos_b)
         _recalculate_from(session, round_idx)
+        if not _balance_ok(session):
+            round_obj.swap_player_positions(pos_a, pos_b)
+            _recalculate_from(session, round_idx)
+            break
         needed[pair_idx] -= 1
 
-    # Refresh session-level cached statistics
-    happinesses = [p.happiness for p in session.players]
-    session.mean_happiness = np.mean(happinesses)
-    session.std_happiness = np.std(happinesses)
-    session.max_and_min_happiness = (max(happinesses), min(happinesses))
-    session.max_happiness_difference = (
-        session.max_and_min_happiness[0] - session.max_and_min_happiness[1]
-    )
-    for player in session.players:
-        player.relative_happiness = player.happiness - session.mean_happiness
+    sync_session_games_played(session)
+    session.recalculate_session_statistics()
 
 
 def apply_preferred_pairs_happiness(session, preferred_pairs):

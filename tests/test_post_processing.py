@@ -41,6 +41,40 @@ def _make_8_player_df():
     return df
 
 
+def _make_10_player_df():
+    names = [
+        "Alice",
+        "Bob",
+        "Carol",
+        "Dave",
+        "Eve",
+        "Frank",
+        "Grace",
+        "Hank",
+        "Ivy",
+        "Jack",
+    ]
+    levels = [1.8, 2.0, 2.2, 2.4, 2.6, 2.8, 3.0, 3.2, 3.4, 3.6]
+    genders = ["Female", "Male"] * 5
+    df = pd.DataFrame(
+        [
+            _make_row(name, level=level, gender=gender)
+            for name, level, gender in zip(names, levels, genders)
+        ],
+        index=names,
+    )
+    return df
+
+
+def _games_played_from_structure(session):
+    counts = {p.name: 0 for p in session.players}
+    for round_obj in session.rounds:
+        for game in round_obj.games:
+            for participant in game.team_A.players + game.team_B.players:
+                counts[participant.name] += 1
+    return counts
+
+
 def _are_teammates(round_obj, p1, p2):
     a = round_obj.find_player_position(p1)
     b = round_obj.find_player_position(p2)
@@ -151,6 +185,70 @@ def test_force_pair_unknown_name_no_crash():
         preferred_pairs=[frozenset({"Alice", "Zoltan"})],
         forced_games=1,
     )
+
+
+def test_force_pair_with_bench_swap_keeps_games_played_in_sync():
+    """Preferred-pair post-processing must keep live games_played aligned with round structure."""
+    df = _make_10_player_df()
+
+    for seed in range(40):
+        baseline = SessionOfRounds(
+            list_of_players=[Player(df.loc[n]) for n in df.index],
+            amount_of_rounds=1,
+            type_preferences=["balanced"],
+            gender_preferences=["open"],
+            level_gap_tol=10.0,
+            num_iter=60,
+            spectrum=False,
+            seed=seed,
+        )
+        round_obj = baseline.rounds[0]
+        benched_names = [p.name for p in round_obj.not_playing]
+        active_names = [
+            p.name
+            for game in round_obj.games
+            for p in game.team_A.players + game.team_B.players
+        ]
+
+        if not benched_names or not active_names:
+            continue
+
+        for benched_name in benched_names:
+            for active_name in active_names:
+                sess = SessionOfRounds(
+                    list_of_players=[Player(df.loc[n]) for n in df.index],
+                    amount_of_rounds=1,
+                    type_preferences=["balanced"],
+                    gender_preferences=["open"],
+                    level_gap_tol=10.0,
+                    num_iter=60,
+                    spectrum=False,
+                    seed=seed,
+                )
+                pair = frozenset({benched_name, active_name})
+                force_preferred_pairs_in_session(
+                    sess,
+                    preferred_pairs=[pair],
+                    forced_games=1,
+                    lambda_weight=0.0,
+                    score_tolerance=1.0,
+                )
+
+                p1 = next(p for p in sess.players if p.name == benched_name)
+                p2 = next(p for p in sess.players if p.name == active_name)
+                if not _are_teammates(sess.rounds[0], p1, p2):
+                    continue
+
+                structural_counts = _games_played_from_structure(sess)
+                live_counts = {p.name: p.games_played for p in sess.players}
+                assert structural_counts == live_counts
+                assert (
+                    max(structural_counts.values()) - min(structural_counts.values())
+                    <= 1
+                )
+                return
+
+    pytest.skip("Could not find a bench-swap preferred-pair case across tested seeds")
 
 
 # ---------------------------------------------------------------------------

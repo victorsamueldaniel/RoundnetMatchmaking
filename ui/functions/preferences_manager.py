@@ -47,6 +47,7 @@ _UI_DEFAULTS: dict = {
     "num_rounds": 4,
     "games_per_round": "auto",
     "level_gap_tol": 1.1,
+    "level_round_play_priority": 1.0,
     "lambda_weight": 2.0,
     "percentile": 33,
     "spectrum_enabled": True,
@@ -74,7 +75,10 @@ _EXTRA_DEFAULTS: dict = {
             "_level_sorter": {
                 "max_noise_factor": 0.1,
                 "round_factor": 1,
-            }
+            },
+            "not_playing": {
+                "level_priority_strength": 1,
+            },
         },
         "generate_all_game_combinations": {
             "max_team_combos": 3,
@@ -141,6 +145,7 @@ UI_DEFAULT_SAVED_KEYS: frozenset = frozenset(
         "num_rounds",
         "games_per_round",
         "level_gap_tol",
+        "level_round_play_priority",
         "lambda_weight",
         "percentile",
         "spectrum_enabled",

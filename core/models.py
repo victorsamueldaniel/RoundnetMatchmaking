@@ -115,6 +115,30 @@ def compute_session_score(players, objective_name, lambda_weight=2.4, percentile
     return float(np.mean(all_h) + lw * np.mean(bottom_vals))
 
 
+def compute_games_played_counts_from_rounds(rounds, players=None):
+    """Return games-played counts from the live round structure.
+
+    This reads current team slots rather than cached game.participants or
+    player.games_played so it stays correct after swaps and editor changes.
+    """
+    counts = {player.name: 0 for player in (players or [])}
+    for round_obj in rounds:
+        for game in round_obj.games:
+            for participant in game.team_A.players + game.team_B.players:
+                counts[participant.name] = counts.get(participant.name, 0) + 1
+    return counts
+
+
+def sync_session_games_played(session):
+    """Refresh every player's games_played from the live session structure."""
+    counts = compute_games_played_counts_from_rounds(
+        getattr(session, "rounds", []), getattr(session, "players", [])
+    )
+    for player in getattr(session, "players", []):
+        player.games_played = counts.get(player.name, 0)
+    return counts
+
+
 _KNOWN_OBJECTIVE_FUNCTIONS = {
     "mean_happiness_objective",
     "std_happiness_objective",
@@ -943,6 +967,9 @@ class GamesRound:
             "level_sorter_max_noise_factor": _cfg_get(
                 go, "games_by_level._level_sorter.max_noise_factor", 0.2
             ),
+            "games_by_level_not_playing_level_priority_strength": _cfg_get(
+                go, "games_by_level.not_playing.level_priority_strength", 1
+            ),
         }
 
     def _happiness_update_kwargs(self, seed, level_gap_tol, spectrum):
@@ -997,6 +1024,123 @@ class GamesRound:
             ],
         )
 
+    def _level_round_bench_priority_strength(self):
+        """Return how strongly level rounds should keep higher-level players active."""
+        try:
+            strength = float(
+                self._params["games_by_level_not_playing_level_priority_strength"]
+            )
+        except (TypeError, ValueError, KeyError):
+            strength = 1.0
+        return max(0.0, strength)
+
+    def _bench_gender_targets_for_mixed_level_round(self, amount_non_playing):
+        """Return desired bench counts by gender for level+mixed rounds."""
+        if (
+            self.type_preference != "level"
+            or self.gender_preference != "mixed"
+            or amount_non_playing <= 0
+        ):
+            return {}
+
+        counts_by_gender = defaultdict(int)
+        for player in self.participants:
+            counts_by_gender[player.gender] += 1
+
+        if len(counts_by_gender) != 2:
+            return {}
+
+        total_active = len(self.participants) - amount_non_playing
+        genders = list(counts_by_gender.keys())
+        gender_a, gender_b = genders
+        count_a = counts_by_gender[gender_a]
+        count_b = counts_by_gender[gender_b]
+
+        best_active = None
+        best_score = None
+        min_active_a = max(0, total_active - count_b)
+        max_active_a = min(count_a, total_active)
+        for active_a in range(min_active_a, max_active_a + 1):
+            active_b = total_active - active_a
+            score = (
+                abs(active_a - active_b),
+                -min(active_a, active_b),
+                abs((count_a - active_a) - (count_b - active_b)),
+            )
+            if best_score is None or score < best_score:
+                best_score = score
+                best_active = {gender_a: active_a, gender_b: active_b}
+
+        if best_active is None:
+            return {}
+
+        return {
+            gender: max(0, counts_by_gender[gender] - best_active[gender])
+            for gender in counts_by_gender
+        }
+
+    def _rank_bench_candidates(self, players):
+        """Return players ordered from highest to lowest sit-out priority."""
+        strength = self._level_round_bench_priority_strength()
+
+        if self.type_preference != "level" or strength <= 0:
+            return sorted(players, key=lambda p: (p.happiness, -p.level), reverse=True)
+
+        if strength < 1:
+            return sorted(
+                players,
+                key=lambda p: (
+                    (1 - strength) * p.happiness - strength * p.level,
+                    p.happiness,
+                    -p.level,
+                ),
+                reverse=True,
+            )
+
+        return sorted(players, key=lambda p: (-p.level, p.happiness), reverse=True)
+
+    def _choose_benched_players_from_bucket(
+        self, ranked_bucket, bench_count, remaining_gender_targets
+    ):
+        """Choose who sits out inside one games-played bucket.
+
+        The caller guarantees all players in the bucket currently share the same
+        games-played count, so strict balance is preserved across buckets.
+        """
+        if bench_count <= 0:
+            return []
+
+        chosen = []
+        chosen_ids = set()
+
+        if remaining_gender_targets:
+            for gender, remaining in sorted(
+                remaining_gender_targets.items(), key=lambda item: item[1], reverse=True
+            ):
+                if remaining <= 0 or len(chosen) >= bench_count:
+                    continue
+                gender_candidates = [
+                    player
+                    for player in ranked_bucket
+                    if player.gender == gender and id(player) not in chosen_ids
+                ]
+                take = min(remaining, bench_count - len(chosen), len(gender_candidates))
+                for player in gender_candidates[:take]:
+                    chosen.append(player)
+                    chosen_ids.add(id(player))
+                remaining_gender_targets[gender] -= take
+
+        if len(chosen) < bench_count:
+            for player in ranked_bucket:
+                if id(player) in chosen_ids:
+                    continue
+                chosen.append(player)
+                chosen_ids.add(id(player))
+                if len(chosen) == bench_count:
+                    break
+
+        return chosen
+
     def create_games(self, seed=None):
 
         ####removing players amongst the ones that had played the most##########
@@ -1032,22 +1176,29 @@ class GamesRound:
                 player
             )
 
-        # Sort each group by decreasing happiness so, within overplayed players,
-        # happier players are benched first and less-happy players keep playing.
-        for k in dic_amount_of_games_played_list_of_players:
-            dic_amount_of_games_played_list_of_players[k].sort(
-                key=lambda p: p.happiness,
-                reverse=True,
-            )
+        remaining_gender_targets = self._bench_gender_targets_for_mixed_level_round(
+            amount_non_playing
+        )
+        self.people_playing = []
+        remaining_to_bench = amount_non_playing
+        for games_played in sorted(
+            dic_amount_of_games_played_list_of_players.keys(), reverse=True
+        ):
+            bucket_players = dic_amount_of_games_played_list_of_players[games_played]
+            ranked_bucket = self._rank_bench_candidates(bucket_players)
+            if remaining_to_bench <= 0:
+                self.people_playing.extend(ranked_bucket)
+                continue
 
-        list_descending_priority = [
-            player
-            for i in sorted(
-                dic_amount_of_games_played_list_of_players.keys(), reverse=True
+            bench_here = min(remaining_to_bench, len(ranked_bucket))
+            bucket_benched = self._choose_benched_players_from_bucket(
+                ranked_bucket, bench_here, remaining_gender_targets
             )
-            for player in dic_amount_of_games_played_list_of_players[i]
-        ]
-        self.people_playing = list_descending_priority[amount_non_playing:]
+            benched_ids = {id(player) for player in bucket_benched}
+            self.people_playing.extend(
+                [player for player in ranked_bucket if id(player) not in benched_ids]
+            )
+            remaining_to_bench -= bench_here
 
         for player in self.people_playing:
             player.previous_happiness = player.happiness
@@ -3166,6 +3317,7 @@ class SessionOfRounds:
         Recalculate session-level statistics (mean and std happiness).
         Call this after making changes to rounds/games/players.
         """
+        sync_session_games_played(self)
         self.mean_happiness = np.mean([player.happiness for player in self.players])
         self.std_happiness = np.std([player.happiness for player in self.players])
 

@@ -105,12 +105,12 @@ def test_session_round_iterations_exist(players_8):
 
 
 # ---------------------------------------------------------------------------
-# Test 4 â€” sit-out fairness tie-break
+# Test 4 â€” sit-out fairness tie-breaks
 # ---------------------------------------------------------------------------
 
 
-def test_sitout_fairness_tiebreak():
-    """In a 6-player/1-game round the happiest player(s) are benched first."""
+def test_balanced_round_sitout_prefers_happiest_players():
+    """Balanced rounds keep the old happiest-player sit-out tie-break."""
     df_fair = pd.DataFrame(
         {
             "Name": ["P1", "P2", "P3", "P4", "P5", "P6"],
@@ -133,7 +133,7 @@ def test_sitout_fairness_tiebreak():
     fair_round = GamesRound(
         fair_players,
         amount_of_games=1,
-        type_preference="level",
+        type_preference="balanced",
         gender_preference=None,
         level_gap_tol=3,
         seed=123,
@@ -143,6 +143,75 @@ def test_sitout_fairness_tiebreak():
     assert (
         actual_benched == expected_benched
     ), f"Fairness tie-break mismatch: expected {expected_benched}, got {actual_benched}"
+
+
+def test_level_round_sitout_prefers_lower_level_players():
+    """Level rounds keep higher-level players active when games played are tied."""
+    df_fair = pd.DataFrame(
+        {
+            "Name": ["P1", "P2", "P3", "P4", "P5", "P6"],
+            "Surname": ["S"] * 6,
+            "Level": [2.0, 2.2, 2.4, 2.6, 2.8, 3.0],
+            "Noisy level": [0.0] * 6,
+            "Gender": ["Male", "Female", "Male", "Female", "Male", "Female"],
+            "Games played": [1] * 6,
+            "Happiness": [5.0, 4.0, 3.0, 2.0, 1.0, 0.0],
+        }
+    )
+    df_fair.set_index("Name", inplace=True)
+
+    fair_players = [Player(df_fair.iloc[i]) for i in range(6)]
+    fair_round = GamesRound(
+        fair_players,
+        amount_of_games=1,
+        type_preference="level",
+        gender_preference=None,
+        level_gap_tol=3,
+        seed=123,
+    )
+    actual_benched = {p.name for p in fair_round.not_playing}
+
+    assert actual_benched == {"P1", "P2"}
+
+
+def test_level_mixed_round_sitout_prefers_lower_levels_within_gender():
+    """Level+mixed rounds bench lower-level players while preserving gender balance."""
+    df_fair = pd.DataFrame(
+        {
+            "Name": ["M1", "M2", "M3", "M4", "M5", "F1", "F2", "F3", "F4", "F5"],
+            "Surname": ["S"] * 10,
+            "Level": [1.5, 2.0, 2.5, 3.0, 3.5, 1.6, 2.1, 2.6, 3.1, 3.6],
+            "Noisy level": [0.0] * 10,
+            "Gender": [
+                "Male",
+                "Male",
+                "Male",
+                "Male",
+                "Male",
+                "Female",
+                "Female",
+                "Female",
+                "Female",
+                "Female",
+            ],
+            "Games played": [1] * 10,
+            "Happiness": [10.0, 8.0, 6.0, 4.0, 2.0, 9.0, 7.0, 5.0, 3.0, 1.0],
+        }
+    )
+    df_fair.set_index("Name", inplace=True)
+
+    fair_players = [Player(df_fair.iloc[i]) for i in range(10)]
+    fair_round = GamesRound(
+        fair_players,
+        amount_of_games=2,
+        type_preference="level",
+        gender_preference="mixed",
+        level_gap_tol=3,
+        seed=321,
+    )
+    actual_benched = {p.name for p in fair_round.not_playing}
+
+    assert actual_benched == {"M1", "F1"}
 
 
 # ---------------------------------------------------------------------------

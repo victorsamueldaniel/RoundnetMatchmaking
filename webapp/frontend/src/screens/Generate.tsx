@@ -51,9 +51,8 @@ function PlayersCard({ onEdit }: { onEdit: (id: string | null) => void }) {
           return (
             <div
               key={p.id}
-              className={`flex min-h-11 items-stretch overflow-hidden rounded-lg border text-sm transition-colors ${
-                on ? 'border-brand-yellow bg-brand-yellow text-black' : 'border-line bg-raised text-white'
-              }`}
+              className={`flex min-h-11 items-stretch overflow-hidden rounded-lg border text-sm transition-colors ${on ? 'border-brand-yellow bg-brand-yellow text-black' : 'border-line bg-raised text-white'
+                }`}
             >
               <button
                 aria-pressed={on}
@@ -244,8 +243,42 @@ function ParametersCard() {
   const update = useStore((s) => s.updateSettings)
   const femaleShift = useStore((s) => s.femaleShift)
   const setFemaleShift = useStore((s) => s.setFemaleShift)
+  const extraParameters = useStore((s) => s.extraParameters)
+  const setExtraParameters = useStore((s) => s.setExtraParameters)
   const pairs = useStore((s) => s.pairs)
   const [dialog, setDialog] = useState<'pairs' | 'advanced' | null>(null)
+
+  const levelRoundPlayPriority = (() => {
+    const gameOptimization = extraParameters?.game_optimization
+    if (!gameOptimization || typeof gameOptimization !== 'object' || Array.isArray(gameOptimization)) return 1
+    const gamesByLevel = (gameOptimization as Record<string, unknown>).games_by_level
+    if (!gamesByLevel || typeof gamesByLevel !== 'object' || Array.isArray(gamesByLevel)) return 1
+    const notPlaying = (gamesByLevel as Record<string, unknown>).not_playing
+    if (!notPlaying || typeof notPlaying !== 'object' || Array.isArray(notPlaying)) return 1
+    const raw = (notPlaying as Record<string, unknown>).level_priority_strength
+    return typeof raw === 'number' ? raw : 1
+  })()
+
+  const setLevelRoundPlayPriority = (value: number) => {
+    const root = (extraParameters && typeof extraParameters === 'object' && !Array.isArray(extraParameters)) ? extraParameters : {}
+    const gameOptimization = (root.game_optimization && typeof root.game_optimization === 'object' && !Array.isArray(root.game_optimization)) ? (root.game_optimization as Record<string, unknown>) : {}
+    const gamesByLevel = (gameOptimization.games_by_level && typeof gameOptimization.games_by_level === 'object' && !Array.isArray(gameOptimization.games_by_level)) ? (gameOptimization.games_by_level as Record<string, unknown>) : {}
+    const notPlaying = (gamesByLevel.not_playing && typeof gamesByLevel.not_playing === 'object' && !Array.isArray(gamesByLevel.not_playing)) ? (gamesByLevel.not_playing as Record<string, unknown>) : {}
+
+    setExtraParameters({
+      ...root,
+      game_optimization: {
+        ...gameOptimization,
+        games_by_level: {
+          ...gamesByLevel,
+          not_playing: {
+            ...notPlaying,
+            level_priority_strength: value,
+          },
+        },
+      },
+    })
+  }
 
   return (
     <Card title="Parameters">
@@ -286,6 +319,15 @@ function ParametersCard() {
           step={0.1}
           format={(v) => (v > 0 ? '+' : '') + v.toFixed(1)}
           onChange={setFemaleShift}
+        />
+        <Slider
+          label="Level-round play priority"
+          help="Higher values keep stronger players active more aggressively in level rounds. In level + mixed rounds, this also keeps stronger players active within each gender when possible."
+          value={levelRoundPlayPriority}
+          min={0}
+          max={2}
+          step={0.1}
+          onChange={setLevelRoundPlayPriority}
         />
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-3">

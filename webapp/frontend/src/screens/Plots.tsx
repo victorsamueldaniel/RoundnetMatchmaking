@@ -108,30 +108,7 @@ function HappinessTab({ charts }: { charts: SessionView['charts'] }) {
             layout={baseLayout({ xaxis: axis('Happiness score'), yaxis: axis('Number of players'), bargap: 0.08 })}
           />
         </Panel>
-        <Panel title="Level vs happiness" subtitle="Dot size = games played, color = happiness">
-          <Chart
-            data={[
-              {
-                type: 'scatter',
-                mode: 'text+markers',
-                x: h.players.map((p) => p.level),
-                y: happiness,
-                text: h.players.map((p) => p.name),
-                textposition: 'top right',
-                textfont: { color: INK_2, size: 10 },
-                marker: {
-                  size: h.players.map((p) => 6 + p.games_played * 3),
-                  color: happiness,
-                  colorscale: SEQUENTIAL,
-                  line: { color: SURFACE, width: 2 },
-                },
-                customdata: h.players.map((p) => p.games_played),
-                hovertemplate: '<b>%{text}</b><br>level %{x}, happiness %{y}<br>%{customdata} games<extra></extra>',
-              },
-            ]}
-            layout={baseLayout({ xaxis: axis('Player level'), yaxis: axis('Happiness score') })}
-          />
-        </Panel>
+        <LevelVsHappinessChart h={h} />
         <Panel title="Happiness by gender" subtitle="Box = quartiles, dashed line = mean">
           <Chart
             data={h.by_gender.map((g, i) => ({
@@ -209,9 +186,7 @@ function TeamTab({ view }: { view: SessionView }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-4 xl:grid-cols-2">
-        <Panel title="Partnership network" subtitle="Node size = happiness, color = level, edge thickness = times as teammates">
-          <Chart data={network(t.nodes, t.partner_edges)} layout={baseLayout({ xaxis: hidden, yaxis: hidden, margin: { l: 8, r: 8, t: 8, b: 8 } })} height={400} />
-        </Panel>
+        <PartnershipNetworkPanel t={t} />
         <Panel title="Opponent network" subtitle="Edge = faced at least twice, thickness = times faced">
           <Chart data={network(t.nodes, t.opponent_edges)} layout={baseLayout({ xaxis: hidden, yaxis: hidden, margin: { l: 8, r: 8, t: 8, b: 8 } })} height={400} />
         </Panel>
@@ -231,24 +206,7 @@ function TeamTab({ view }: { view: SessionView }) {
             layout={baseLayout({ yaxis: axis('Player level'), xaxis: axis('') })}
           />
         </Panel>
-        <Panel title="Max partner vs max opponent level" subtitle="Color = player level">
-          <Chart
-            data={[
-              {
-                type: 'scatter',
-                mode: 'text+markers',
-                x: t.max_partner_vs_opponent.map((p) => p.x),
-                y: t.max_partner_vs_opponent.map((p) => p.y),
-                text: t.max_partner_vs_opponent.map((p) => p.name),
-                textposition: 'top right',
-                textfont: { color: INK_2, size: 10 },
-                marker: { size: 11, color: t.max_partner_vs_opponent.map((p) => p.level), colorscale: SEQUENTIAL, line: { color: SURFACE, width: 2 } },
-                hovertemplate: '<b>%{text}</b><br>max partner %{x}<br>max opponent %{y}<extra></extra>',
-              },
-            ]}
-            layout={baseLayout({ xaxis: axis('Max partner level'), yaxis: axis('Max opponent level') })}
-          />
-        </Panel>
+        <MaxPartnerPanel t={t} />
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
         {(
@@ -355,34 +313,14 @@ function SpectrumTab({ charts }: { charts: SessionView['charts'] }) {
           layout={baseLayout({ xaxis: axis('Games'), yaxis: axis(''), margin: { l: 90, r: 56, t: 12, b: 48 } })}
         />
       </Panel>
-      <Panel title="Player spectrum profiles">
-        <Chart
-          height={Math.max(340, s.heatmap.players.length * 22 + 80)}
-          data={[
-            {
-              type: 'heatmap',
-              z: s.heatmap.values,
-              x: s.attributes,
-              y: s.heatmap.players,
-              colorscale: SEQUENTIAL,
-              xgap: 2,
-              ygap: 2,
-              texttemplate: '%{z}',
-              textfont: { size: 11 },
-              colorbar: { thickness: 10, outlinewidth: 0, tickfont: { color: MUTED } },
-              hovertemplate: '<b>%{z}</b> %{x}<br>%{y}<extra></extra>',
-            },
-          ]}
-          layout={baseLayout({ xaxis: axis('', { side: 'top' }), yaxis: axis('', { autorange: 'reversed' }), margin: { l: 90, r: 16, t: 40, b: 12 } })}
-        />
-      </Panel>
+      <PlayerSpectrumChart s={s} />
     </div>
   )
 }
 
 export default function PlotsScreen() {
   const view = useStore((s) => s.view)
-  const [tab, setTab] = useState<'happiness' | 'spectrum' | 'team'>('happiness')
+  const [tab, setTab] = useState<'main' | 'happiness' | 'spectrum' | 'team'>('main')
   if (!view) return <p className="py-16 text-center text-muted">Loading session…</p>
   return (
     <div className="space-y-4">
@@ -391,6 +329,7 @@ export default function PlotsScreen() {
           label="Charts"
           value={tab}
           options={[
+            { value: 'main', label: 'Main charts' },
             { value: 'happiness', label: 'Happiness overview' },
             { value: 'spectrum', label: 'Spectrum analysis' },
             { value: 'team', label: 'Team analysis' },
@@ -398,9 +337,118 @@ export default function PlotsScreen() {
           onChange={setTab}
         />
       </div>
+      {tab === 'main' && <MainTab view={view} />}
       {tab === 'happiness' && <HappinessTab charts={view.charts} />}
       {tab === 'spectrum' && <SpectrumTab charts={view.charts} />}
       {tab === 'team' && <TeamTab view={view} />}
     </div>
+  )
+}
+
+function MainTab({ view }: { view: SessionView }) {
+  const h = view.charts.happiness
+  const s = view.charts.spectrum
+  const t = view.charts.team
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 xl:grid-cols-2">
+        <LevelVsHappinessChart h={h} />
+        <PlayerSpectrumChart s={s} />
+        <PartnershipNetworkPanel t={t} />
+        <MaxPartnerPanel t={t} />
+      </div>
+    </div>
+  )
+}
+
+function LevelVsHappinessChart({ h }: { h: SessionView['charts']['happiness'] }) {
+  return (
+    <Panel title="Level vs happiness" subtitle="Dot size = games played, color = happiness">
+      <Chart
+        data={[
+          {
+            type: 'scatter',
+            mode: 'text+markers',
+            x: h.players.map((p) => p.level),
+            y: h.players.map((p) => p.happiness),
+            text: h.players.map((p) => p.name),
+            textposition: 'top right',
+            textfont: { color: INK_2, size: 10 },
+            marker: {
+              size: h.players.map((p) => 1 + p.games_played * 6),
+              color: h.players.map((p) => p.happiness),
+              colorscale: SEQUENTIAL,
+              line: { color: SURFACE, width: 2 },
+            },
+            customdata: h.players.map((p) => p.games_played),
+            hovertemplate: '<b>%{text}</b><br>level %{x}, happiness %{y}<br>%{customdata} games<extra></extra>',
+          },
+        ]}
+        layout={baseLayout({ xaxis: axis('Player level'), yaxis: axis('Happiness score') })}
+      />
+    </Panel>
+  )
+}
+
+function PlayerSpectrumChart({ s }: { s?: SessionView['charts']['spectrum'] }) {
+  if (!s) return (
+    <Panel title="Player spectrum profiles">
+      <p className="text-sm text-muted">No spectrum data available for analysis.</p>
+    </Panel>
+  )
+  return (
+    <Panel title="Player spectrum profiles">
+      <Chart
+        height={Math.max(340, s.heatmap.players.length * 22 + 80)}
+        data={[
+          {
+            type: 'heatmap',
+            z: s.heatmap.values,
+            x: s.attributes,
+            y: s.heatmap.players,
+            colorscale: SEQUENTIAL,
+            xgap: 2,
+            ygap: 2,
+            texttemplate: '%{z}',
+            textfont: { size: 11 },
+            colorbar: { thickness: 10, outlinewidth: 0, tickfont: { color: MUTED } },
+            hovertemplate: '<b>%{z}</b> %{x}<br>%{y}<extra></extra>',
+          },
+        ]}
+        layout={baseLayout({ xaxis: axis('', { side: 'top' }), yaxis: axis('', { autorange: 'reversed' }), margin: { l: 90, r: 16, t: 40, b: 12 } })}
+      />
+    </Panel>
+  )
+}
+
+function PartnershipNetworkPanel({ t }: { t: SessionView['charts']['team'] }) {
+  return (
+    <Panel title="Partnership network" subtitle="Node size = happiness, color = level, edge thickness = times as teammates">
+      <Chart data={network(t.nodes, t.partner_edges)} layout={baseLayout({ xaxis: hidden, yaxis: hidden, margin: { l: 8, r: 8, t: 8, b: 8 } })} height={400} />
+    </Panel>
+  )
+}
+
+function MaxPartnerPanel({ t }: { t: SessionView['charts']['team'] }) {
+  return (
+    <Panel title="Max partner vs max opponent level" subtitle="Color = player level">
+      <Chart
+        data={[
+          {
+            type: 'scatter',
+            mode: 'text+markers',
+            x: t.max_partner_vs_opponent.map((p) => p.x),
+            y: t.max_partner_vs_opponent.map((p) => p.y),
+            text: t.max_partner_vs_opponent.map((p) => p.name),
+            textposition: 'top right',
+            textfont: { color: INK_2, size: 10 },
+            marker: { size: 11, color: t.max_partner_vs_opponent.map((p) => p.level), colorscale: SEQUENTIAL, line: { color: SURFACE, width: 2 } },
+            hovertemplate: '<b>%{text}</b><br>max partner %{x}<br>max opponent %{y}<extra></extra>',
+          },
+        ]}
+        layout={baseLayout({ xaxis: axis('Max partner level'), yaxis: axis('Max opponent level') })}
+      />
+    </Panel>
   )
 }

@@ -706,6 +706,19 @@ class SessionGenerationTabMixin:
         )
         self._make_param_slider(
             params_grid,
+            3,
+            0,
+            "level-round play priority",
+            "Higher values keep stronger players active more aggressively in level rounds. In level + mixed rounds, this also keeps stronger players active within each gender when possible.",
+            "level_round_play_priority_var",
+            "level_round_play_priority_scale",
+            0.0,
+            2.0,
+            0.1,
+            1.0,
+        )
+        self._make_param_slider(
+            params_grid,
             0,
             0,
             "extra factor for bottom 33%",
@@ -2666,6 +2679,10 @@ class SessionGenerationTabMixin:
         except Exception:
             lgt = 1.1
         try:
+            level_round_priority = float(self.level_round_play_priority_var.get())
+        except Exception:
+            level_round_priority = 1.0
+        try:
             nr = int(self.num_rounds_var.get())
         except Exception:
             nr = 4
@@ -2673,6 +2690,7 @@ class SessionGenerationTabMixin:
             "num_rounds": nr,
             "games_per_round": self.games_per_round_var.get(),
             "level_gap_tol": lgt,
+            "level_round_play_priority": level_round_priority,
             "lambda_weight": lambda_w,
             "percentile": pct,
             "spectrum_enabled": bool(self.spectrum_var.get()),
@@ -2729,6 +2747,9 @@ class SessionGenerationTabMixin:
         # Scalar parameters.
         self.games_per_round_var.set(prefs.get("games_per_round", "auto"))
         self.level_gap_tol_var.set(prefs.get("level_gap_tol", 1.1))
+        self.level_round_play_priority_var.set(
+            prefs.get("level_round_play_priority", 1.0)
+        )
         self.lambda_weight_var.set(prefs.get("lambda_weight", 2.0))
         self.percentile_var.set(prefs.get("percentile", 33))
         self.set_spectrum_state(prefs.get("spectrum_enabled", True))
@@ -2784,6 +2805,7 @@ class SessionGenerationTabMixin:
             self.num_rounds_var,
             self.games_per_round_var,
             self.level_gap_tol_var,
+            self.level_round_play_priority_var,
             self.lambda_weight_var,
             self.percentile_var,
             self.spectrum_var,
@@ -2840,6 +2862,23 @@ class SessionGenerationTabMixin:
                 self.set_spectrum_state(bool(spectrum_val))
             except Exception as exc:
                 print(f"[_apply_session_params] Could not restore spectrum: {exc}")
+
+        # --- Level-round play priority (stored inside extra_parameters) ---
+        try:
+            extra = getattr(session, "extra_parameters", {}) or {}
+            level_priority = (
+                extra.get("game_optimization", {})
+                .get("games_by_level", {})
+                .get("not_playing", {})
+                .get("level_priority_strength")
+            )
+            if level_priority is not None:
+                self.level_round_play_priority_var.set(float(level_priority))
+        except Exception as exc:
+            print(
+                "[_apply_session_params] Could not restore level_round_play_priority_var:"
+                f" {exc}"
+            )
 
         # --- Games per round ---
         games_list = getattr(session, "games_per_round_each_round", None)
@@ -3100,6 +3139,17 @@ class SessionGenerationTabMixin:
         )  # noqa: PLC0415
 
         _ep = load_extra_preferences_temp()
+        try:
+            level_round_priority_strength = float(
+                self.level_round_play_priority_var.get()
+            )
+        except (TypeError, ValueError):
+            level_round_priority_strength = 1.0
+        _ep.setdefault("game_optimization", {}).setdefault(
+            "games_by_level", {}
+        ).setdefault("not_playing", {})[
+            "level_priority_strength"
+        ] = level_round_priority_strength
         first_seed = _ep.get("first_seed", 0)
         last_seed = _ep.get("last_seed", 9)
         num_iter = _ep.get("num_iter", 435)
