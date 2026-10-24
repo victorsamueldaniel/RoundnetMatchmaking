@@ -399,16 +399,76 @@ class SessionGenerationTabMixin:
         # Store reference for configuration
         self.info_frame = info_frame
 
+        info_content = tk.Frame(info_frame, bg=self.colors["bg_light"])
+        info_content.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        info_content.rowconfigure(0, weight=1)
+        info_content.rowconfigure(1, weight=0)
+        info_content.rowconfigure(2, weight=2)
+        info_content.columnconfigure(0, weight=1)
+
         self.info_text = scrolledtext.ScrolledText(
-            info_frame,
+            info_content,
             width=40,
             font=self.fonts["small"],
             bg=self.colors["bg_light"],
             fg=self.colors["text_dark"],
             highlightthickness=0,
             wrap=tk.WORD,
+            height=10,
         )
-        self.info_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.info_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+
+        controls_row = tk.Frame(info_content, bg=self.colors["bg_light"])
+        controls_row.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(8, 6))
+        controls_row.columnconfigure(0, weight=1)
+
+        tk.Label(
+            controls_row,
+            text="Participation by round:",
+            font=self.fonts["small_bold"],
+            bg=self.colors["bg_light"],
+            fg=self.colors["text_dark"],
+        ).grid(row=0, column=0, sticky=tk.W)
+
+        self.availability_undo_button = tk.Button(
+            controls_row,
+            text="Undo",
+            command=self._undo_availability_change,
+            bg=self.colors["bg_light"],
+            fg=self.colors["text_dark"],
+            relief=tk.RIDGE,
+            state=tk.DISABLED,
+            cursor="hand2",
+            padx=8,
+            pady=2,
+        )
+        self.availability_undo_button.grid(row=0, column=1, sticky=tk.E)
+
+        self.availability_table_canvas = tk.Canvas(
+            info_content, bg=self.colors["bg_light"], highlightthickness=0
+        )
+        self.availability_table_frame = tk.Frame(
+            self.availability_table_canvas, bg=self.colors["bg_light"]
+        )
+        self.availability_table_canvas.create_window(
+            (0, 0), window=self.availability_table_frame, anchor="nw", tags=("table",)
+        )
+        self.availability_table_canvas.grid(
+            row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S)
+        )
+        self.availability_table_frame.bind(
+            "<Configure>",
+            lambda _e: self.availability_table_canvas.configure(
+                scrollregion=self.availability_table_canvas.bbox("all")
+            ),
+        )
+        self.availability_table_canvas.bind(
+            "<Configure>",
+            lambda e: self.availability_table_canvas.itemconfig("table", width=e.width),
+        )
+
+        self.player_round_availability_ui = {}
+        self.availability_undo_stack = []
 
         # Create console output frame on the right
         console_frame = self._make_label_frame(paned_window, "Console Output")
@@ -844,8 +904,8 @@ class SessionGenerationTabMixin:
         main_frame.rowconfigure(1, weight=1)
 
         # Configure default pane sizes relative to screen
-        list_w = int(self.screen_w * 0.5)
-        info_w = int(self.screen_w * 0.22)
+        list_w = int(self.screen_w * 0.45)
+        info_w = int(self.screen_w * 0.27)
         console_w = int(self.screen_w * 0.28)
 
         self.paned_window.paneconfigure(self.list_frame, width=list_w)
@@ -1134,7 +1194,7 @@ class SessionGenerationTabMixin:
         self.player_button_font = self._scaled_font_tuple(
             self.fonts["normal_bold"], 1.08
         )
-        self.player_button_padx = max(2, int(5 * 1.08 * self.scale))
+        self.player_button_padx = max(1, int(5 * 1.08 * self.scale * 0.7))
         self.player_button_pady = max(2, int(5 * 1.08 * self.scale))
 
     def _get_current_monitor_size(self):
@@ -1371,8 +1431,8 @@ class SessionGenerationTabMixin:
 
         # Refresh pane sizes
         try:
-            list_w = int(self.screen_w * 0.5)
-            info_w = int(self.screen_w * 0.22)
+            list_w = int(self.screen_w * 0.45)
+            info_w = int(self.screen_w * 0.27)
             console_w = int(self.screen_w * 0.28)
             self.paned_window.paneconfigure(self.list_frame, width=list_w)
             self.paned_window.paneconfigure(self.info_frame, width=info_w)
@@ -1615,6 +1675,8 @@ class SessionGenerationTabMixin:
         # Re-attach auto-save traces after rebuild if preferences are active.
         if getattr(self, "_prefs_traces_active", False):
             self._trace_round_pref_vars()
+        if hasattr(self, "availability_table_frame"):
+            self._refresh_availability_table()
 
     def toggle_spectrum_switch(self):
         """Toggle Spectrum parameter ON/OFF"""
@@ -1691,6 +1753,9 @@ class SessionGenerationTabMixin:
             self.selected_players.append(player_name)
 
         # Update count label and info display
+        self.availability_undo_stack = []
+        if hasattr(self, "availability_undo_button"):
+            self.availability_undo_button.config(state=tk.DISABLED)
         self._update_count_label()
         self.update_info_display()
         try:
@@ -1737,6 +1802,7 @@ class SessionGenerationTabMixin:
 
         if not self.selected_players:
             self.info_text.insert("1.0", "No players selected")
+            self._refresh_availability_table()
             return
 
         # Create dataframe of selected players
@@ -1799,16 +1865,178 @@ class SessionGenerationTabMixin:
         self.info_text.insert(
             tk.END, f"Average Level: {selected_df['Level'].mean():.2f}\n"
         )
-        self.info_text.insert(tk.END, "=" * 40 + "\n\n")
+        self.info_text.insert(tk.END, "=" * 40 + "\n")
+        self._refresh_availability_table()
 
-        # Display each player AFTER level distribution
-        for name in self.selected_players:
-            player = selected_df.loc[name]
-            self.info_text.insert(tk.END, f"{name}\n")
-            self.info_text.insert(tk.END, f"  Level: {player['Level']}\n")
-            if "Gender" in player.index:
-                self.info_text.insert(tk.END, f"  Gender: {player['Gender']}\n")
-            self.info_text.insert(tk.END, "\n")
+    def _round_count_for_availability(self):
+        try:
+            return max(1, int(self.num_rounds_var.get()))
+        except Exception:
+            return 1
+
+    def _selected_players_sorted(self):
+        return sorted(set(self.selected_players), key=lambda n: str(n).casefold())
+
+    def _ensure_availability_matrix(self):
+        rounds = self._round_count_for_availability()
+        current_players = self._selected_players_sorted()
+        next_matrix = {}
+        for player_name in current_players:
+            row = self.player_round_availability_ui.get(player_name, [])
+            row = [bool(v) for v in list(row)[:rounds]]
+            if len(row) < rounds:
+                row.extend([True] * (rounds - len(row)))
+            next_matrix[player_name] = row
+        self.player_round_availability_ui = next_matrix
+
+    def _apply_availability_changes(self, changes, push_undo=True):
+        effective = [c for c in changes if c[2] != c[3]]
+        if not effective:
+            return
+        self._ensure_availability_matrix()
+        for player_name, round_idx, _old, new in effective:
+            if player_name not in self.player_round_availability_ui:
+                continue
+            row = self.player_round_availability_ui[player_name]
+            if 0 <= round_idx < len(row):
+                row[round_idx] = bool(new)
+        if push_undo:
+            self.availability_undo_stack.append(effective)
+        if hasattr(self, "availability_undo_button"):
+            self.availability_undo_button.config(
+                state=tk.NORMAL if self.availability_undo_stack else tk.DISABLED
+            )
+        self._refresh_availability_table()
+
+    def _undo_availability_change(self):
+        if not self.availability_undo_stack:
+            return
+        frame = self.availability_undo_stack.pop()
+        reverse = [(p, r, new, old) for p, r, old, new in frame]
+        self._apply_availability_changes(reverse, push_undo=False)
+        if hasattr(self, "availability_undo_button"):
+            self.availability_undo_button.config(
+                state=tk.NORMAL if self.availability_undo_stack else tk.DISABLED
+            )
+
+    def _set_all_availability(self, value):
+        self._ensure_availability_matrix()
+        changes = []
+        for player_name in self._selected_players_sorted():
+            row = self.player_round_availability_ui.get(player_name, [])
+            for round_idx, old in enumerate(row):
+                changes.append((player_name, round_idx, bool(old), bool(value)))
+        self._apply_availability_changes(changes)
+
+    def _set_round_all_in(self, round_idx):
+        self._ensure_availability_matrix()
+        changes = []
+        for player_name in self._selected_players_sorted():
+            row = self.player_round_availability_ui.get(player_name, [])
+            if 0 <= round_idx < len(row):
+                old = bool(row[round_idx])
+                changes.append((player_name, round_idx, old, True))
+        self._apply_availability_changes(changes)
+
+    def _toggle_availability_cell(self, player_name, round_idx):
+        self._ensure_availability_matrix()
+        row = self.player_round_availability_ui.get(player_name)
+        if row is None or round_idx >= len(row):
+            return
+        old = bool(row[round_idx])
+        self._apply_availability_changes([(player_name, round_idx, old, not old)])
+
+    def _refresh_availability_table(self):
+        if not hasattr(self, "availability_table_frame"):
+            return
+        for child in self.availability_table_frame.winfo_children():
+            child.destroy()
+
+        self._ensure_availability_matrix()
+        rounds = self._round_count_for_availability()
+        sorted_players = self._selected_players_sorted()
+        if not sorted_players:
+            tk.Label(
+                self.availability_table_frame,
+                text="No players selected",
+                bg=self.colors["bg_light"],
+                fg="#666666",
+                font=self.fonts["small"],
+            ).grid(row=0, column=0, sticky=tk.W, padx=4, pady=4)
+            return
+
+        header_name = tk.Frame(self.availability_table_frame, bg=self.colors["bg_light"])
+        header_name.grid(row=0, column=0, sticky=tk.W, padx=2, pady=2)
+        tk.Label(
+            header_name,
+            text="Round",
+            bg=self.colors["bg_light"],
+            fg=self.colors["text_dark"],
+            font=self.fonts["small_bold"],
+        ).pack(side=tk.LEFT, padx=(0, 6))
+        tk.Button(
+            header_name,
+            text="All IN",
+            command=lambda: self._set_all_availability(True),
+            bg="#1f7a3f",
+            fg=self.colors["text_light"],
+            relief=tk.FLAT,
+            cursor="hand2",
+            padx=6,
+            pady=2,
+        ).pack(side=tk.LEFT, padx=2)
+        tk.Button(
+            header_name,
+            text="All OUT",
+            command=lambda: self._set_all_availability(False),
+            bg=self.colors["accent_red"],
+            fg=self.colors["text_light"],
+            relief=tk.FLAT,
+            cursor="hand2",
+            padx=6,
+            pady=2,
+        ).pack(side=tk.LEFT, padx=2)
+
+        for col_idx, player_name in enumerate(sorted_players, start=1):
+            name_header = tk.Frame(self.availability_table_frame, bg=self.colors["bg_light"])
+            name_header.grid(row=0, column=col_idx, padx=2, pady=2, sticky=tk.EW)
+            tk.Label(
+                name_header,
+                text=player_name,
+                bg=self.colors["bg_light"],
+                fg=self.colors["text_dark"],
+                font=self.fonts["small_bold"],
+            ).pack(side=tk.TOP)
+
+        for round_idx in range(rounds):
+            tk.Button(
+                self.availability_table_frame,
+                text=f"R{round_idx + 1} IN",
+                command=lambda idx=round_idx: self._set_round_all_in(idx),
+                bg="#D8EAF7",
+                fg=self.colors["text_dark"],
+                relief=tk.RIDGE,
+                cursor="hand2",
+                padx=5,
+                pady=2,
+            ).grid(row=round_idx + 1, column=0, padx=2, pady=2, sticky=tk.EW)
+            for col_idx, player_name in enumerate(sorted_players, start=1):
+                row = self.player_round_availability_ui.get(player_name, [])
+                is_in = bool(row[round_idx]) if round_idx < len(row) else True
+                tk.Button(
+                    self.availability_table_frame,
+                    text="IN" if is_in else "OUT",
+                    command=lambda p=player_name, idx=round_idx: self._toggle_availability_cell(p, idx),
+                    bg="#1f7a3f" if is_in else self.colors["accent_red"],
+                    fg=self.colors["text_light"],
+                    relief=tk.FLAT,
+                    cursor="hand2",
+                    padx=8,
+                    pady=2,
+                ).grid(row=round_idx + 1, column=col_idx, padx=2, pady=2, sticky=tk.EW)
+
+        for col in range(len(sorted_players) + 1):
+            self.availability_table_frame.grid_columnconfigure(col, weight=1)
 
     def select_all(self):
         """Select all players"""
@@ -1822,6 +2050,9 @@ class SessionGenerationTabMixin:
                     self.selected_players.append(player_name)
 
         # Update count and info display
+        self.availability_undo_stack = []
+        if hasattr(self, "availability_undo_button"):
+            self.availability_undo_button.config(state=tk.DISABLED)
         self._update_count_label()
         self.update_info_display()
 
@@ -1836,9 +2067,13 @@ class SessionGenerationTabMixin:
 
         # Clear selected players list
         self.selected_players = []
+        self.availability_undo_stack = []
+        if hasattr(self, "availability_undo_button"):
+            self.availability_undo_button.config(state=tk.DISABLED)
         self._update_count_label()
         self.info_text.delete("1.0", tk.END)
         self.info_text.insert("1.0", "No players selected")
+        self._refresh_availability_table()
 
     def show_add_player_dialog(self):
         """Show dialog to add a new player."""
@@ -2972,6 +3207,9 @@ class SessionGenerationTabMixin:
                 session._objective_percentile = 10
 
             self.session_of_rounds = session
+            self.player_round_availability_ui = dict(
+                getattr(session, "player_round_availability", {}) or {}
+            )
 
             # Sync player button selection to the loaded session's players
             session_player_names = {p.name for p in session.players}
@@ -3076,7 +3314,7 @@ class SessionGenerationTabMixin:
         # Use unique() to ensure selected_players list has no duplicates
         import pandas as pd  # noqa: PLC0415
 
-        unique_selected_players = list(dict.fromkeys(self.selected_players))
+        unique_selected_players = self._selected_players_sorted()
         sub_df = self.main_df.loc[unique_selected_players].copy()
 
         # Additional safety check: ensure sub_df has no duplicate indices
@@ -3135,6 +3373,14 @@ class SessionGenerationTabMixin:
         type_preferences = [var.get() for var in self.type_prefs]
         gender_preferences = [var.get() for var in self.gender_prefs]
         amount_of_rounds = self.num_rounds_var.get()
+        self._ensure_availability_matrix()
+        player_round_availability = {}
+        for player_name in unique_selected_players:
+            row = self.player_round_availability_ui.get(player_name, [])
+            normalized = [bool(v) for v in row[:amount_of_rounds]]
+            if len(normalized) < amount_of_rounds:
+                normalized.extend([True] * (amount_of_rounds - len(normalized)))
+            player_round_availability[player_name] = normalized
 
         # Get games per round setting
         games_per_round_setting = self.games_per_round_var.get()
@@ -3212,6 +3458,7 @@ class SessionGenerationTabMixin:
             extra_parameters=_ep,
             print_progress=print_progress,
             female_shift=female_shift,
+            player_round_availability=player_round_availability,
         )
 
     def run_generation_with_progress(
@@ -3236,6 +3483,7 @@ class SessionGenerationTabMixin:
         extra_parameters=None,
         print_progress=True,
         female_shift=0.0,
+        player_round_availability=None,
     ):
         """Run session generation with progress updates."""
         try:
@@ -3265,6 +3513,7 @@ class SessionGenerationTabMixin:
                 main_module.run_session_generation_with_seed_optimization(
                     df=sub_df,
                     amount_of_rounds=amount_of_rounds,
+                    player_round_availability=player_round_availability,
                     type_preferences=type_preferences,
                     gender_preferences=gender_preferences,
                     rounds_reordering=rounds_reordering,

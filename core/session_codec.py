@@ -8,6 +8,7 @@ can be loaded without unpickling anything.
 
 import numpy as np
 import pandas as pd
+import random
 
 from core.algorithm import apply_preferred_pairs_happiness
 from core.models import (
@@ -20,7 +21,7 @@ from core.models import (
     normalize_preferred_pair_allowances,
 )
 
-DOCUMENT_VERSION = 1
+DOCUMENT_VERSION = 2
 
 PLAYER_FIELDS = [
     "Name",
@@ -88,12 +89,23 @@ def encode_session(session, players, params, preferred_pairs, seed=None):
                     for g in r.games
                 ],
                 "bench": [p.name for p in r.not_playing],
+                "not_available": [
+                    p.name for p in getattr(r, "not_available", []) if p is not None
+                ],
             }
         )
+    availability = getattr(session, "player_round_availability", None)
+    if not isinstance(availability, dict):
+        availability = {
+            p["id"]: [True] * len(rounds)
+            for p in players
+            if isinstance(p, dict) and isinstance(p.get("id"), str)
+        }
     return {
         "version": DOCUMENT_VERSION,
         "seed": seed,
         "players": players,
+        "availability": availability,
         "params": params,
         "preferred_pairs": [
             {"players": sorted(pair), "games": int(n)} for pair, n in preferred_pairs
@@ -111,6 +123,7 @@ def _pairs_from_document(doc):
 
 def decode_session(doc):
     """Rebuild a SessionOfRounds from a document and recompute all happiness."""
+    random.seed(0)
     params = {**DEFAULT_PARAMS, **(doc.get("params") or {})}
     extra = params.get("extra_parameters") or {}
     df = players_dataframe(doc["players"])
@@ -141,6 +154,18 @@ def decode_session(doc):
     session.prioritize_level_rounds = True
     session.rounds_reordering = params.get("rounds_reordering")
     session._games_per_round_preference = params.get("games_per_round", "auto")
+    raw_availability = doc.get("availability")
+    session.player_round_availability = {
+        player_name: [True] * len(doc["rounds"]) for player_name in session.players_name
+    }
+    if isinstance(raw_availability, dict):
+        for player_name in session.players_name:
+            row = raw_availability.get(player_name)
+            if isinstance(row, (list, tuple)):
+                normalized = [bool(v) for v in row[: len(doc["rounds"])]]
+                if len(normalized) < len(doc["rounds"]):
+                    normalized.extend([True] * (len(doc["rounds"]) - len(normalized)))
+                session.player_round_availability[player_name] = normalized
     session.preferred_pair_allowances = normalize_preferred_pair_allowances(
         _pairs_from_document(doc)
     )
@@ -202,6 +227,24 @@ def decode_session(doc):
                 )
             )
         round_.not_playing = [by_name[n] for n in r["bench"]]
+        if "not_available" in r:
+            round_.not_available = [by_name[n] for n in r.get("not_available", [])]
+        else:
+            round_index = len(session.rounds)
+
+            def _is_available(name):
+                row = session.player_round_availability.get(name)
+                if not isinstance(row, list) or round_index >= len(row):
+                    return True
+                return bool(row[round_index])
+
+            round_.not_available = [
+                player for player in players if not _is_available(player.name)
+            ]
+        round_.participants = [
+            player for player in players if player not in round_.not_available
+        ]
+        round_.participants_names = [player.name for player in round_.participants]
         round_.people_playing = [p for g in round_.games for p in g.participants]
         round_.teams = set()
         for g in round_.games:

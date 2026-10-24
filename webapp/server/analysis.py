@@ -221,6 +221,9 @@ def rounds_view(session):
                     for g in round_.games
                 ],
                 "bench": [player(p) for p in round_.not_playing],
+                "not_available": [
+                    player(p) for p in getattr(round_, "not_available", [])
+                ],
             }
         )
     return out

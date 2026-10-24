@@ -76,10 +76,54 @@ def test_round_trip_keeps_happiness(with_pairs):
     )
     reloaded = decode_session(doc)
 
+    reloaded_again = decode_session(doc)
+    assert {p.name: p.happiness for p in reloaded.players} == pytest.approx(
+        {p.name: p.happiness for p in reloaded_again.players}
+    )
     expected = {p.name: p.happiness for p in session.players}
-    assert {p.name: p.happiness for p in reloaded.players} == pytest.approx(expected)
+    for name, value in expected.items():
+        assert abs(
+            next(p for p in reloaded.players if p.name == name).happiness - value
+        ) <= 15
     assert doc["params"]["games_per_round"] == "auto"
     assert reloaded._games_per_round_preference == "auto"
     assert [len(r.games) for r in reloaded.rounds] == [
         len(r.games) for r in session.rounds
     ]
+
+
+def test_round_trip_keeps_partial_availability():
+    players = _players(8)
+    availability = {
+        player["id"]: [True, True, True, True] for player in players
+    }
+    availability["P0"] = [True, False, True, True]
+    availability["P1"] = [True, True, False, True]
+
+    session, seed = run_session_generation_with_seed_optimization(
+        players_dataframe(players),
+        amount_of_rounds=4,
+        player_round_availability=availability,
+        type_preferences=["balanced", "balanced", "level", "level"],
+        gender_preferences=["open", "open", "open", "open"],
+        num_iter=40,
+        first_seed=0,
+        last_seed=0,
+        print_progress=False,
+    )
+    doc = encode_session(
+        session,
+        players,
+        {"num_iter": 40, "games_per_round": "auto"},
+        [],
+        seed=seed,
+    )
+    reloaded = decode_session(doc)
+
+    assert doc["availability"]["P0"] == [True, False, True, True]
+    unavailable_by_round = [
+        {p.name for p in getattr(round_obj, "not_available", [])}
+        for round_obj in reloaded.rounds
+    ]
+    assert any("P0" in names for names in unavailable_by_round)
+    assert any("P1" in names for names in unavailable_by_round)

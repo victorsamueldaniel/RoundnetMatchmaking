@@ -1115,6 +1115,7 @@ def _session_games_round_block_height(round_obj) -> float:
         + _SESSION_GAMES_HEADER_H
         + len(round_obj.games) * _SESSION_GAMES_ROW_H
         + (_SESSION_GAMES_SIT_H if round_obj.not_playing else 0)
+        + (_SESSION_GAMES_SIT_H if getattr(round_obj, "not_available", None) else 0)
         + _SESSION_GAMES_SPACER_H
     )
 
@@ -1226,8 +1227,24 @@ def _render_session_games_round(
             y,
             1.0,
             _SESSION_GAMES_SIT_H,
-            f"Not Playing:  {names}",
+            f"Benched out:  {names}",
             _SESSION_GAMES_COLORS["sit"],
+            fg="#333333",
+            fs=7.0,
+            ha="left",
+        )
+        y += _SESSION_GAMES_SIT_H
+    if getattr(round_obj, "not_available", None):
+        names = ", ".join(p.name for p in round_obj.not_available)
+        _session_games_draw_cell(
+            ax,
+            mpatches,
+            0,
+            y,
+            1.0,
+            _SESSION_GAMES_SIT_H,
+            f"Not available:  {names}",
+            "#F2F2F2",
             fg="#333333",
             fs=7.0,
             ha="left",
@@ -1244,7 +1261,7 @@ def create_session_games_png(
 
     Rounds are stacked vertically. Each round has a dark-blue title row, a header
     row, one row per game (with Team-A / VS / Team-B / Δ Level / Info columns), and
-    an optional 'Not Playing' row — identical to the exported xlsx.
+    optional 'Benched out' and 'Not available' rows — identical to the exported xlsx.
 
     Parameters
     ----------

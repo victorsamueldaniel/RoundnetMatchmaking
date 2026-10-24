@@ -101,6 +101,7 @@ class GenerateRequest(BaseModel):
     percentile: float = Field(default=33, ge=0, le=100)
     female_shift: float = 0.0
     spectrum: bool = True
+    availability: dict[str, list[bool]] | None = None
     preferred_pairs: list[dict] = []
     extra_parameters: dict = {}
 
@@ -225,6 +226,7 @@ def validate_document(document):
         ):
             raise _invalid(f"round {index} has an unknown type or gender preference")
         names = list(round_.get("bench") or [])
+        names += list(round_.get("not_available") or [])
         for game in round_.get("games") or []:
             team_a, team_b = game.get("team_a"), game.get("team_b")
             if not (isinstance(team_a, list) and isinstance(team_b, list)) or (
@@ -237,6 +239,17 @@ def validate_document(document):
             raise _invalid(f"round {index} lists a player twice")
         if not set(names) <= known:
             raise _invalid(f"round {index} names an unknown player")
+    availability = document.get("availability")
+    if availability is not None:
+        if not isinstance(availability, dict):
+            raise _invalid("availability must be an object keyed by player id")
+        for player_id, row in availability.items():
+            if player_id not in known:
+                raise _invalid("availability references an unknown player")
+            if not isinstance(row, list):
+                raise _invalid("availability rows must be arrays")
+            if len(row) != len(rounds):
+                raise _invalid("availability rows must match the number of rounds")
 
 
 def _decode(document):
@@ -317,6 +330,17 @@ def generate(request: GenerateRequest):
         "female_shift": request.female_shift,
         "extra_parameters": extra,
     }
+    availability = request.availability
+    if not isinstance(availability, dict):
+        availability = {}
+    normalized_availability = {}
+    for player in players:
+        player_id = player.get("id")
+        row = availability.get(player_id)
+        if isinstance(row, list) and len(row) == request.amount_of_rounds:
+            normalized_availability[player_id] = [bool(v) for v in row]
+        else:
+            normalized_availability[player_id] = [True] * request.amount_of_rounds
     priority = {"level": 0, "balanced": 1}
     generated_order = sorted(
         range(request.amount_of_rounds),
@@ -349,8 +373,9 @@ def generate(request: GenerateRequest):
                 print("Starting session generation...")
                 print(f"Testing seeds {first_seed} to {last_seed}\n")
                 session, seed = run_session_generation_with_seed_optimization(
-                    df=players_dataframe(players),
+                    df=                    players_dataframe(players),
                     amount_of_rounds=request.amount_of_rounds,
+                    player_round_availability=normalized_availability,
                     type_preferences=request.type_preferences,
                     gender_preferences=request.gender_preferences,
                     rounds_reordering=reordering,

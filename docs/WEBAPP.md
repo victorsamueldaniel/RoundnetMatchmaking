@@ -6,6 +6,54 @@ logic is shared; only the screens differ.
 
 This is the headline addition in version 2.0.0.
 
+## Run it locally
+
+Requirements: Python 3.11+ and Node.js 20.19+.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+python -m pip install -e ".[dev,web]"
+
+cd webapp/frontend
+npm ci
+npm run build
+cd ../..
+
+uvicorn webapp.server.app:app --port 8000
+```
+
+Open http://localhost:8000. On a phone connected to the same network, start uvicorn with
+`--host 0.0.0.0` and open `http://<computer-ip>:8000`.
+
+The server is stateless: players, settings, advanced parameters, and recent sessions stay in the
+browser unless you export them.
+
+For frontend development with hot reload, run the API and the Vite dev server side by side:
+
+Terminal 1, repo root:
+```bash
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+python -m pip install -e ".[dev,web]"
+
+cd webapp/frontend
+npm ci
+npm run build
+cd ../..
+
+uvicorn webapp.server.app:app --port 8000 --reload   
+```
+Terminal 2:
+```
+cd webapp/frontend 
+npm run dev                    
+```
+Then open http://localhost:5173.
+
+The Vite dev server forwards `/api` calls to port 8000.
+
+
 ## Architecture
 
 ```
@@ -45,15 +93,16 @@ A session is saved as JSON instead of a pickle file:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "seed": 3,
   "players": [{"id": "Alice", "Name": "Alice", "Level": 2.5, "Gender": "Female", "Prey": 5, "...": 5}],
+  "availability": {"Alice": [true, true, false, true], "Bob": [true, true, true, true]},
   "params": {"lambda_weight": 2.0, "percentile": 33, "level_gap_tol": 0.7, "extra_parameters": {}},
   "preferred_pairs": [{"players": ["Alice", "Bob"], "games": 2}],
   "rounds": [
     {"type_preference": "balanced", "gender_preference": "open",
      "games": [{"team_a": ["Alice", "Bob"], "team_b": ["Chloe", "David"]}],
-     "bench": ["Emile"]}
+     "bench": ["Emile"], "not_available": ["Alice"]}
   ]
 }
 ```
@@ -84,12 +133,12 @@ Loading a JSON document cannot run code, unlike `pickle.load`.
 | Desktop | Web |
 |---|---|
 | First-run wizard, missing values dialog | Same flow on the Session tab when no players are stored |
-| Player grid, info panel, add/edit dialog | Same, plus a name filter; the ✎ button replaces right click on touch screens |
+| Player grid, info panel, add/edit dialog | Same, plus a name filter; the ✎ button replaces right click on touch screens; Selected players info includes per-round participation (IN/OUT) with undo |
 | Round preferences, parameter sliders, spectrum toggle | Same ranges and defaults |
 | Preferred pairs dialog | Same (2 players, 1 to 4 forced games) |
 | `extra_parameters_temp.json` edited by hand | "Advanced" dialog with a JSON editor, import, download, reset |
 | Console output | Same text, with the ANSI colors rendered |
-| Games Editor tab | Same interactions; on a phone one round at a time and a "Details" tap mode for the breakdown tooltip |
+| Games Editor tab | Same interactions; on a phone one round at a time and a "Details" tap mode for the breakdown tooltip; "Benched out" and read-only "Not available" sections are shown separately |
 | Session Games tab | Same round swap, reset, show levels, apply; downloads for PNG, Excel, read-only Excel, JSON, report |
 | Happiness / Spectrum / Team plot tabs | Same 12 charts, interactive (zoom, hover) |
 | Contact tab and bug report folder | Same contact card; the bug report is a downloadable JSON file |

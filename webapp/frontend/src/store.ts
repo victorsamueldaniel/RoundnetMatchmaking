@@ -34,6 +34,7 @@ export type Confirmable = {
 }
 
 export type PendingSwap = { round: number; a: string; b: string }
+export type GenerationAvailability = Record<string, boolean[]>
 
 export type RecentSession = { savedAt: string; label: string; document: SessionDocument }
 
@@ -52,6 +53,7 @@ type State = Confirmable & {
   pendingSwaps: PendingSwap[]
   showLevels: boolean
   consoleText: string
+  generationAvailability: GenerationAvailability
 
   setTab: (tab: Tab) => void
   applyDefaults: (defaults: Defaults) => void
@@ -76,6 +78,9 @@ type State = Confirmable & {
   setShowLevels: (value: boolean) => void
   appendConsole: (text: string) => void
   clearConsole: () => void
+  setGenerationAvailability: (
+    value: GenerationAvailability | ((prev: GenerationAvailability) => GenerationAvailability),
+  ) => void
 }
 
 const DEFAULT_TYPES: RoundType[] = ['balanced', 'balanced', 'level', 'level']
@@ -155,6 +160,7 @@ export const useStore = create<State>()(
       pendingSwaps: [],
       showLevels: false,
       consoleText: '',
+      generationAvailability: {},
 
       setTab: (tab) => set({ tab }),
       applyDefaults: (defaults) =>
@@ -175,11 +181,17 @@ export const useStore = create<State>()(
       setRoster: (players) =>
         set((s) => {
           const ids = new Set(players.map((p) => p.id))
+          const nextAvailability: GenerationAvailability = {}
+          for (const [playerId, row] of Object.entries(s.generationAvailability)) {
+            if (!ids.has(playerId)) continue
+            nextAvailability[playerId] = Array.isArray(row) ? row.map(Boolean) : []
+          }
           return {
             roster: players,
             overrides: {},
             selected: s.selected.filter((id) => ids.has(id)),
             pairs: s.pairs.filter((pair) => pair.players.every((id) => ids.has(id))),
+            generationAvailability: nextAvailability,
           }
         }),
       upsertPlayer: (player) =>
@@ -303,6 +315,17 @@ export const useStore = create<State>()(
             roundGenders,
           }
           const femaleShift = (params.female_shift as number) ?? s.femaleShift ?? 0
+          const availabilityFromDocument = document.availability && typeof document.availability === 'object'
+            ? document.availability
+            : {}
+          const generationAvailability: GenerationAvailability = Object.fromEntries(
+            selectedIds.map((playerId) => {
+              const row = availabilityFromDocument[playerId]
+              const normalized = Array.isArray(row) ? row.slice(0, roundCount).map(Boolean) : []
+              while (normalized.length < roundCount) normalized.push(true)
+              return [playerId, normalized]
+            }),
+          )
           const nextConsole = logs.length
             ? s.consoleText + '\n' + new Date().toISOString() + ' - Session load:\n' + logs.join('\n') + '\n'
             : s.consoleText
@@ -316,6 +339,7 @@ export const useStore = create<State>()(
             settings,
             femaleShift,
             extraParameters: normalizeSessionExtraParameters(params.extra_parameters, s.extraDefaults ?? s.extraParameters),
+            generationAvailability,
             document,
             view,
             history: [{ score: view.summary.score, document }],
@@ -351,6 +375,10 @@ export const useStore = create<State>()(
           return { consoleText: next.length > MAX_CONSOLE ? next.slice(-MAX_CONSOLE) : next }
         }),
       clearConsole: () => set({ consoleText: '' }),
+      setGenerationAvailability: (value) =>
+        set((s) => ({
+          generationAvailability: typeof value === 'function' ? value(s.generationAvailability) : value,
+        })),
     }),
     {
       name: 'roundnet-matchmaking',

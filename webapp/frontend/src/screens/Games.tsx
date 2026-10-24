@@ -57,7 +57,12 @@ function RoundTable({ round, index, levels, showLevels }: { round: RoundDoc; ind
       })}
       {round.bench.length > 0 && (
         <div className="border-t border-[#B8B8B8] bg-bench px-3 py-1.5 text-xs">
-          <span className="font-semibold">Not playing:</span> {round.bench.join(', ')}
+          <span className="font-semibold">Benched out:</span> {round.bench.join(', ')}
+        </div>
+      )}
+      {(round.not_available?.length ?? 0) > 0 && (
+        <div className="border-t border-[#B8B8B8] bg-[#f5f5f5] px-3 py-1.5 text-xs">
+          <span className="font-semibold">Not available:</span> {round.not_available!.join(', ')}
         </div>
       )}
     </div>

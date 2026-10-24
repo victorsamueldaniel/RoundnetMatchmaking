@@ -23,11 +23,15 @@ function anonymise(roster: { id: string }[], document: SessionDocument | null) {
   const session = document && {
     ...document,
     players: document.players.map((p) => ({ ...p, id: name(p.id), Name: name(p.id), Surname: '' })),
+    availability: Object.fromEntries(
+      Object.entries(document.availability ?? {}).map(([playerId, row]) => [name(playerId), row]),
+    ),
     preferred_pairs: document.preferred_pairs.map((p) => ({ ...p, players: p.players.map(name) })),
     rounds: document.rounds.map((r) => ({
       ...r,
       games: r.games.map((g) => ({ team_a: g.team_a.map(name), team_b: g.team_b.map(name) })),
       bench: r.bench.map(name),
+      not_available: (r.not_available ?? []).map(name),
     })),
   }
   return { players, session, name, known: () => [...alias.keys()] }

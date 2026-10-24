@@ -214,6 +214,44 @@ def test_level_mixed_round_sitout_prefers_lower_levels_within_gender():
     assert actual_benched == {"M1", "F1"}
 
 
+def test_partial_availability_keeps_benching_fairness_without_counting_absences():
+    df = pd.DataFrame(
+        {
+            "Name": ["P1", "P2", "P3", "P4", "P5", "P6"],
+            "Surname": ["S"] * 6,
+            "Level": [2.0, 2.1, 2.2, 2.3, 2.4, 2.5],
+            "Noisy level": [0.0] * 6,
+            "Gender": ["Male", "Female", "Male", "Female", "Male", "Female"],
+            "Games played": [0] * 6,
+            "Happiness": [0.0] * 6,
+        }
+    ).set_index("Name")
+    players = [Player(df.iloc[i]) for i in range(6)]
+    availability = {name: [True, True, True, True] for name in df.index}
+    availability["P6"][0] = False
+
+    session = SessionOfRounds(
+        players,
+        amount_of_rounds=4,
+        player_round_availability=availability,
+        games_per_round_each_round=1,
+        type_preferences=["balanced"] * 4,
+        gender_preferences=["open"] * 4,
+        prioritize_level_rounds=False,
+        level_gap_tol=3,
+        num_iter=30,
+        seed=3,
+    )
+    benched_each_round = [[p.name for p in r.not_playing] for r in session.rounds]
+    assert benched_each_round[0], "Expected one benched player in round 1"
+    assert "P6" in [p.name for p in session.rounds[0].not_available]
+
+    first_three_benched = [names[0] for names in benched_each_round[:3] if names]
+    assert len(first_three_benched) == len(
+        set(first_three_benched)
+    ), "A player was benched twice before all available players were benched once."
+
+
 # ---------------------------------------------------------------------------
 # Test 5 â€” iterations telemetry: pass metadata and selected candidate
 # ---------------------------------------------------------------------------

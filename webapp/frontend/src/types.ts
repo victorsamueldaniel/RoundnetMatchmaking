@@ -21,12 +21,14 @@ export type RoundDoc = {
   gender_preference: RoundGender
   games: { team_a: string[]; team_b: string[] }[]
   bench: string[]
+  not_available?: string[]
 }
 
 export type SessionDocument = {
   version: number
   seed: number | null
   players: Player[]
+  availability?: Record<string, boolean[]>
   params: Record<string, unknown> & {
     games_per_round?: string | number | null
     lambda_weight?: number
@@ -61,6 +63,7 @@ export type RoundView = {
   gender_preference: RoundGender
   games: { team_a: SlotView[]; team_b: SlotView[]; level_difference: number; gender_ok: boolean }[]
   bench: SlotView[]
+  not_available?: SlotView[]
 }
 
 export type Distribution = { values: number[] }

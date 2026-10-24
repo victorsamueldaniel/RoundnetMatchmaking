@@ -39,6 +39,7 @@ def _score_players_with_objective(players, objective_function, lambda_weight):
 def run_session_generation_with_seed_optimization(
     df,
     amount_of_rounds=4,
+    player_round_availability=None,
     type_preferences=None,
     gender_preferences=None,
     rounds_reordering=None,
@@ -152,6 +153,7 @@ def run_session_generation_with_seed_optimization(
         session_kwargs = {
             "list_of_players": list_of_players,
             "amount_of_rounds": amount_of_rounds,
+            "player_round_availability": player_round_availability,
             "type_preferences": type_preferences,
             "level_gap_tol": level_gap_tol,
             "num_iter": num_iter,
@@ -248,6 +250,23 @@ def run_session_generation_with_seed_optimization(
         )
         print(f"\033[94mChosen seed: {chosen_seed}\033[0m")
         print("\033[92mDONE\033[0m")
+
+    if session_of_rounds is not None:
+        num_rounds = len(session_of_rounds.rounds)
+        for player in session_of_rounds.players:
+            player.happiness = 0
+            player.games_played = 0
+            player.happiness_gained_history = [None] * num_rounds
+            player.teammate_history = [frozenset()] * num_rounds
+            player.other_players_in_same_game_history = [frozenset()] * num_rounds
+            player.spec_chosen_history = [None] * num_rounds
+        for round_idx, round_obj in enumerate(session_of_rounds.rounds):
+            round_obj.recalculate_happiness(round_idx)
+            for game in round_obj.games:
+                for player in game.participants:
+                    player.games_played += 1
+        sync_session_games_played(session_of_rounds)
+        session_of_rounds.recalculate_session_statistics()
 
     return session_of_rounds, chosen_seed
 

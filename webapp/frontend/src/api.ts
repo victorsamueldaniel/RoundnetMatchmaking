@@ -49,6 +49,7 @@ export async function exportPlayers(players: Player[]) {
 
 export type GenerateRequest = {
   players: Player[]
+  availability: Record<string, boolean[]>
   amount_of_rounds: number
   type_preferences: RoundType[]
   gender_preferences: RoundGender[]

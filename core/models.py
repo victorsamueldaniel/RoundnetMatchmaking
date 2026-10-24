@@ -554,7 +554,7 @@ class Player:
             if best_gain <= 0:
                 spec_chosen = None
             else:
-                spec_chosen = random.choice(specs_with_best_gain)
+                spec_chosen = specs_with_best_gain[0]
                 self.happiness += (
                     getattr(self, _SPEC_KEY_TO_ATTR[spec_chosen])
                     * spectrum_game[spec_chosen]
@@ -902,6 +902,7 @@ class GamesRound:
     def __init__(
         self,
         list_of_players,
+        available_player_names=None,
         previous_games_rounds_anti_chron=[],
         teams_per_game=2,
         players_per_team=2,
@@ -936,8 +937,17 @@ class GamesRound:
         self.gender_preference = gender_preference
         self.minority_gender = minority_gender
         self.gender_level_medians = gender_level_medians or {}
-        self.participants = list_of_players
-        self.participants_names = [player.name for player in list_of_players]
+        self.all_players = list(list_of_players)
+        if available_player_names is None:
+            self.available_player_names = None
+            self.participants = list(list_of_players)
+        else:
+            available_set = set(available_player_names)
+            self.available_player_names = available_set
+            self.participants = [
+                player for player in list_of_players if player.name in available_set
+            ]
+        self.participants_names = [player.name for player in self.participants]
         self.previous_games = previous_games_rounds_anti_chron
         self.previous_teams = set(
             team for round in previous_games_rounds_anti_chron for team in round.teams
@@ -982,12 +992,22 @@ class GamesRound:
         self.weight_same_teammate = weight_same_teammate
         # Initialize iterations attribute to store all game combinations explored
         self.iterations = []
+        self.not_available = [
+            player for player in self.all_players if player not in self.participants
+        ]
         self.create_games(seed=seed)
 
         self.not_playing = [
-            person for person in list_of_players if person not in self.people_playing
+            person for person in self.participants if person not in self.people_playing
         ]
-        for player in self.not_playing:
+        sitting_out = []
+        sitting_out_ids = set()
+        for player in self.not_playing + self.not_available:
+            if id(player) in sitting_out_ids:
+                continue
+            sitting_out_ids.add(id(player))
+            sitting_out.append(player)
+        for player in sitting_out:
             player.spec_chosen_history.append(None)
             player.happiness_gained_history.append(None)
             player.teammate_history.append(frozenset())
@@ -1234,7 +1254,7 @@ class GamesRound:
         return sorted(players, key=lambda p: (-p.level, p.happiness), reverse=True)
 
     def _choose_benched_players_from_bucket(
-        self, ranked_bucket, bench_count, remaining_gender_targets
+        self, ranked_bucket, bench_count, remaining_gender_targets, bench_counts
     ):
         """Choose who sits out inside one games-played bucket.
 
@@ -1246,34 +1266,69 @@ class GamesRound:
 
         chosen = []
         chosen_ids = set()
+        if bench_counts:
+            bench_count_levels = sorted(
+                {bench_counts.get(player.name, 0) for player in ranked_bucket}
+            )
+        else:
+            bench_count_levels = [None]
 
-        if remaining_gender_targets:
-            for gender, remaining in sorted(
-                remaining_gender_targets.items(), key=lambda item: item[1], reverse=True
-            ):
-                if remaining <= 0 or len(chosen) >= bench_count:
-                    continue
-                gender_candidates = [
+        for level in bench_count_levels:
+            if len(chosen) >= bench_count:
+                break
+            if level is None:
+                level_bucket = [
+                    player for player in ranked_bucket if id(player) not in chosen_ids
+                ]
+            else:
+                level_bucket = [
                     player
                     for player in ranked_bucket
-                    if player.gender == gender and id(player) not in chosen_ids
+                    if id(player) not in chosen_ids
+                    and bench_counts.get(player.name, 0) == level
                 ]
-                take = min(remaining, bench_count - len(chosen), len(gender_candidates))
-                for player in gender_candidates[:take]:
+            if not level_bucket:
+                continue
+
+            if remaining_gender_targets:
+                for gender, remaining in sorted(
+                    remaining_gender_targets.items(),
+                    key=lambda item: item[1],
+                    reverse=True,
+                ):
+                    if remaining <= 0 or len(chosen) >= bench_count:
+                        continue
+                    gender_candidates = [
+                        player for player in level_bucket if player.gender == gender
+                    ]
+                    take = min(
+                        remaining, bench_count - len(chosen), len(gender_candidates)
+                    )
+                    for player in gender_candidates[:take]:
+                        chosen.append(player)
+                        chosen_ids.add(id(player))
+                    remaining_gender_targets[gender] -= take
+                    level_bucket = [
+                        player
+                        for player in level_bucket
+                        if id(player) not in chosen_ids
+                    ]
+
+            if len(chosen) < bench_count:
+                for player in level_bucket:
                     chosen.append(player)
                     chosen_ids.add(id(player))
-                remaining_gender_targets[gender] -= take
-
-        if len(chosen) < bench_count:
-            for player in ranked_bucket:
-                if id(player) in chosen_ids:
-                    continue
-                chosen.append(player)
-                chosen_ids.add(id(player))
-                if len(chosen) == bench_count:
-                    break
+                    if len(chosen) == bench_count:
+                        break
 
         return chosen
+
+    def _bench_counts_from_previous_rounds(self):
+        counts = defaultdict(int)
+        for previous_round in self.previous_games:
+            for player in getattr(previous_round, "not_playing", []):
+                counts[player.name] += 1
+        return counts
 
     def create_games(self, seed=None):
 
@@ -1293,46 +1348,43 @@ class GamesRound:
                 self.players_per_team * self.teams_per_game
             )
 
-        # we split the players by amount of games played
-        all_amounts_of_games_played = {
-            person.games_played for person in self.participants
-        }
-
-        dic_amount_of_games_played_list_of_players = {
-            amount_of_games_played: []
-            for amount_of_games_played in all_amounts_of_games_played
-        }
-        shuffled_players = self.participants.copy()
-        random.shuffle(shuffled_players)
-
-        for player in shuffled_players:
-            dic_amount_of_games_played_list_of_players[player.games_played].append(
-                player
-            )
+        if not self.participants:
+            self.people_playing = []
+            self.games = []
+            self.teams = set()
+            return
 
         remaining_gender_targets = self._bench_gender_targets_for_mixed_level_round(
             amount_non_playing
         )
-        self.people_playing = []
-        remaining_to_bench = amount_non_playing
-        for games_played in sorted(
-            dic_amount_of_games_played_list_of_players.keys(), reverse=True
-        ):
-            bucket_players = dic_amount_of_games_played_list_of_players[games_played]
-            ranked_bucket = self._rank_bench_candidates(bucket_players)
-            if remaining_to_bench <= 0:
-                self.people_playing.extend(ranked_bucket)
-                continue
-
-            bench_here = min(remaining_to_bench, len(ranked_bucket))
-            bucket_benched = self._choose_benched_players_from_bucket(
-                ranked_bucket, bench_here, remaining_gender_targets
-            )
-            benched_ids = {id(player) for player in bucket_benched}
-            self.people_playing.extend(
-                [player for player in ranked_bucket if id(player) not in benched_ids]
-            )
-            remaining_to_bench -= bench_here
+        bench_counts = self._bench_counts_from_previous_rounds()
+        shuffled_players = self.participants.copy()
+        random.shuffle(shuffled_players)
+        shuffle_position = {
+            player.name: index for index, player in enumerate(shuffled_players)
+        }
+        ranked_candidates = self._rank_bench_candidates(shuffled_players)
+        rank_position = {
+            player.name: index for index, player in enumerate(ranked_candidates)
+        }
+        ranked_candidates = sorted(
+            ranked_candidates,
+            key=lambda player: (
+                -player.games_played,
+                rank_position.get(player.name, 0),
+                shuffle_position.get(player.name, 0),
+            ),
+        )
+        bucket_benched = self._choose_benched_players_from_bucket(
+            ranked_candidates,
+            amount_non_playing,
+            remaining_gender_targets,
+            bench_counts,
+        )
+        benched_ids = {id(player) for player in bucket_benched}
+        self.people_playing = [
+            player for player in ranked_candidates if id(player) not in benched_ids
+        ]
 
         for player in self.people_playing:
             player.previous_happiness = player.happiness
@@ -2041,6 +2093,8 @@ class GamesRound:
         round_idx : int, optional
             The index of this round in the session (0-based). Used to update history.
         """
+        if round_idx is not None:
+            random.seed(10_000 + int(round_idx))
         # Save happiness state before recalculation
         happiness_before_this_round = {}
         if round_idx is not None:
@@ -2147,7 +2201,11 @@ class GamesRound:
         # this round before clearing the round-local state, so a swap-and-swap-back
         # returns to exactly the same score as before the first apply.
         if round_idx is not None:
-            for player in self.not_playing:
+            sitting_out = list(self.not_playing)
+            for player in getattr(self, "not_available", []):
+                if player not in sitting_out:
+                    sitting_out.append(player)
+            for player in sitting_out:
                 if round_idx < len(player.happiness_gained_history):
                     player.happiness_gained_history[round_idx] = None
                 if round_idx < len(player.spec_chosen_history):
@@ -2202,7 +2260,7 @@ if __name__ == "__main__":
 
     for attr in ["amount_of_games", "type_preference"]:
         print(attr + " : ", getattr(round_of_games, attr))
-    print("not playing:", [player.name for player in round_of_games.not_playing])
+    print("benched out:", [player.name for player in round_of_games.not_playing])
     i = 1
     for game in round_of_games.games:
         print("_______", "game", i, "_______")
@@ -2230,6 +2288,7 @@ class SessionOfRounds:
         self,
         list_of_players,
         amount_of_rounds=4,
+        player_round_availability=None,
         games_per_round_each_round=None,
         players_per_team_each_round=None,
         type_preferences=["balanced", "balanced", "level", "level"],
@@ -2265,6 +2324,9 @@ class SessionOfRounds:
 
         self.players = list_of_players
         self.players_name = [player.name for player in list_of_players]
+        self.player_round_availability = self._normalize_player_round_availability(
+            player_round_availability
+        )
         self.rounds = []
         self.spectrum = spectrum
         self.objective_function = objective_function
@@ -2383,6 +2445,34 @@ class SessionOfRounds:
         self._objective_function_name = resolved_name
         self._objective_lambda_weight = resolved_lambda_weight
         self._objective_percentile = resolved_percentile
+        self.player_round_availability = self._normalize_player_round_availability(
+            getattr(self, "player_round_availability", None)
+        )
+        for round_obj in getattr(self, "rounds", []):
+            if not hasattr(round_obj, "not_available"):
+                round_obj.not_available = []
+
+    def _normalize_player_round_availability(self, raw_availability):
+        default = {
+            player_name: [True] * int(self.amount_of_rounds)
+            for player_name in self.players_name
+        }
+        if not isinstance(raw_availability, dict):
+            return default
+
+        normalized = {}
+        for player_name in self.players_name:
+            row = raw_availability.get(player_name)
+            if isinstance(row, (list, tuple)):
+                normalized_row = [bool(value) for value in row[: self.amount_of_rounds]]
+                if len(normalized_row) < self.amount_of_rounds:
+                    normalized_row.extend(
+                        [True] * (self.amount_of_rounds - len(normalized_row))
+                    )
+            else:
+                normalized_row = [True] * int(self.amount_of_rounds)
+            normalized[player_name] = normalized_row
+        return normalized
 
     def _calculate_gender_distribution(self):
         """Calculate the majority and minority genders in the session, and gender-specific level medians"""
@@ -2454,6 +2544,14 @@ class SessionOfRounds:
             self.gender_preferences = [
                 self.gender_preferences[i - 1] for i in order_num_list
             ]
+        if hasattr(self, "player_round_availability") and isinstance(
+            self.player_round_availability, dict
+        ):
+            for player_name, row in self.player_round_availability.items():
+                if isinstance(row, list) and len(row) >= len(order_num_list):
+                    self.player_round_availability[player_name] = [
+                        row[i - 1] for i in order_num_list
+                    ]
 
         # Reorder all player histories to match the new round order
         for player in self.players:
@@ -2505,6 +2603,7 @@ class SessionOfRounds:
 
     def create_rounds(self, seed=None):
         # function that creates a list of rounds
+        ordered_indices = list(range(self.amount_of_rounds))
         if self.prioritize_level_rounds:
 
             def _round_type_priority(type_pref):
@@ -2543,9 +2642,16 @@ class SessionOfRounds:
                 round_seed = seed + i
             else:
                 round_seed = None
+            availability_round_idx = ordered_indices[i]
+            available_player_names = [
+                player_name
+                for player_name, row in self.player_round_availability.items()
+                if availability_round_idx < len(row) and bool(row[availability_round_idx])
+            ]
             rounds.append(
                 GamesRound(
                     list_of_players=self.players,
+                    available_player_names=available_player_names,
                     amount_of_games=self.games_per_round_each_round[i],
                     players_per_team=self.players_per_team_each_round[i],
                     previous_games_rounds_anti_chron=rounds,
@@ -2793,7 +2899,7 @@ class SessionOfRounds:
             output.append(pref_text)
             colored_output.append(Colors.OKCYAN + pref_text + Colors.ENDC)
 
-            not_playing_text = "not playing: " + str(
+            not_playing_text = "benched out: " + str(
                 [player.name for player in round.not_playing]
             )
             output.append(not_playing_text)
@@ -3210,9 +3316,23 @@ class SessionOfRounds:
                     ws_games.merge_cells(f"A{current_row}:H{current_row}")
                     cell = ws_games[f"A{current_row}"]
                     not_playing_names = ", ".join([p.name for p in round.not_playing])
-                    cell.value = f"Not Playing: {not_playing_names}"
+                    cell.value = f"Benched out: {not_playing_names}"
                     cell.fill = PatternFill(
                         start_color="FCE4D6", end_color="FCE4D6", fill_type="solid"
+                    )
+                    cell.font = Font(italic=True)
+                    cell.alignment = Alignment(horizontal="left", vertical="center")
+                    cell.border = thin_border
+                if getattr(round, "not_available", None):
+                    current_row += 1
+                    ws_games.merge_cells(f"A{current_row}:H{current_row}")
+                    cell = ws_games[f"A{current_row}"]
+                    not_available_names = ", ".join(
+                        [p.name for p in round.not_available]
+                    )
+                    cell.value = f"Not available: {not_available_names}"
+                    cell.fill = PatternFill(
+                        start_color="F2F2F2", end_color="F2F2F2", fill_type="solid"
                     )
                     cell.font = Font(italic=True)
                     cell.alignment = Alignment(horizontal="left", vertical="center")

@@ -24,6 +24,7 @@ export function applySwaps(document: SessionDocument, swaps: PendingSwap[]): Ses
     ...r,
     games: r.games.map((g) => ({ team_a: [...g.team_a], team_b: [...g.team_b] })),
     bench: [...r.bench],
+    not_available: [...(r.not_available ?? [])],
   }))
   for (const swap of swaps) {
     const round = rounds[swap.round]
@@ -156,6 +157,18 @@ export function EditorScreen() {
   const levels = useMemo(() => new Map(document.players.map((p) => [p.id, Number(p.Level)])), [document])
   const pairKeys = useMemo(() => new Set(document.preferred_pairs.map((p) => [...p.players].sort().join('|'))), [document])
   const pendingRounds = new Set(swaps.map((s) => s.round))
+  const maxGamesPerRound = useMemo(
+    () => working.rounds.reduce((max, round) => Math.max(max, round.games.length), 0),
+    [working.rounds],
+  )
+  const maxBenchedPerRound = useMemo(
+    () => working.rounds.reduce((max, round) => Math.max(max, round.bench.length), 0),
+    [working.rounds],
+  )
+  const maxUnavailablePerRound = useMemo(
+    () => working.rounds.reduce((max, round) => Math.max(max, round.not_available?.length ?? 0), 0),
+    [working.rounds],
+  )
 
   const overBenched = useMemo(() => {
     const played = new Map(working.players.map((p) => [p.id, 0]))
@@ -272,7 +285,24 @@ export function EditorScreen() {
     <section key={r} className="min-w-0 overflow-hidden rounded-xl border border-line bg-panel">
       <h3 className="bg-brand-red px-3 py-2 text-center font-bold tracking-wide">ROUND {r + 1}</h3>
       <div className="space-y-2 p-2">
-        {round.games.map((game, g) => {
+        {Array.from({ length: maxGamesPerRound }, (_, g) => {
+          const game = round.games[g]
+          if (!game) {
+            return (
+              <div key={g} className="rounded-lg bg-raised p-2 opacity-0 pointer-events-none" aria-hidden>
+                <p className="mb-1.5 text-center text-[11px] italic">placeholder</p>
+                <div className="flex gap-1 rounded-md p-1">
+                  <div className="min-h-16 min-w-0 flex-1 rounded-md border px-1 py-1" />
+                  <div className="min-h-16 min-w-0 flex-1 rounded-md border px-1 py-1" />
+                </div>
+                <p className="py-0.5 text-center text-xs font-semibold">0.0 VS</p>
+                <div className="flex gap-1 rounded-md p-1">
+                  <div className="min-h-16 min-w-0 flex-1 rounded-md border px-1 py-1" />
+                  <div className="min-h-16 min-w-0 flex-1 rounded-md border px-1 py-1" />
+                </div>
+              </div>
+            )
+          }
           const mean = (team: string[]) => team.reduce((sum, n) => sum + (levels.get(n) ?? 0), 0) / team.length
           const diff = mean(game.team_a) - mean(game.team_b)
           const gold = (team: string[]) => pairKeys.has([...team].sort().join('|'))
@@ -294,10 +324,37 @@ export function EditorScreen() {
             </div>
           )
         })}
-        {round.bench.length > 0 && (
+        {maxBenchedPerRound > 0 && (
           <div className="rounded-lg bg-[#FFF8DC] p-2">
-            <p className="mb-1 text-xs font-semibold text-black">Not playing</p>
-            <div className="grid grid-cols-2 gap-1">{round.bench.map((n) => renderPlayer(n, r, true))}</div>
+            <p className="mb-1 text-xs font-semibold text-black">Benched out</p>
+            <div className="grid grid-cols-2 gap-1">
+              {Array.from({ length: maxBenchedPerRound }, (_, idx) => {
+                const name = round.bench[idx]
+                if (!name) {
+                  return <div key={`bench-empty-${r}-${idx}`} className="min-h-16 rounded-md bg-transparent" aria-hidden />
+                }
+                return renderPlayer(name, r, true)
+              })}
+            </div>
+          </div>
+        )}
+        {maxUnavailablePerRound > 0 && (
+          <div className="rounded-lg bg-[#f2f2f2] p-2">
+            <p className="mb-1 text-xs font-semibold text-black">Not available</p>
+            <div className="grid grid-cols-2 gap-1">
+              {Array.from({ length: maxUnavailablePerRound }, (_, idx) => {
+                const name = round.not_available?.[idx]
+                if (!name) {
+                  return <div key={`unavailable-empty-${r}-${idx}`} className="min-h-16 rounded-md bg-transparent" aria-hidden />
+                }
+                return (
+                  <div key={name} className="min-h-16 rounded-md border border-black/10 bg-white px-1 py-1 text-center text-xs leading-tight text-black">
+                    <span className="block truncate font-semibold">{name}</span>
+                    <span className="opacity-70">Lvl {levels.get(name)}</span>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
       </div>

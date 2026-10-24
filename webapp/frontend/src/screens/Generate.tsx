@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 import { exportPlayers, generateSession, viewSession } from '../api'
 import { toast } from '../components/toast'
 import { Button, Card, Modal, Notice, Segmented, Slider } from '../components/ui'
@@ -10,6 +10,20 @@ import { CONFIRMABLE_LABELS, unsavedKeys, useStore } from '../store'
 import type { RoundGender, RoundType, SessionDocument } from '../types'
 import { AdvancedDialog, PairsDialog, PlayerDialog } from './Dialogs'
 import { FileHelp, PlayerImport } from './PlayerImport'
+
+type AvailabilityMap = Record<string, boolean[]>
+type AvailabilityChange = { playerId: string; round: number; previous: boolean; next: boolean }
+
+function normalizeAvailability(availability: AvailabilityMap, selected: string[], rounds: number): AvailabilityMap {
+  const out: AvailabilityMap = {}
+  for (const playerId of selected) {
+    const current = availability[playerId]
+    const row = Array.isArray(current) ? current.slice(0, rounds).map(Boolean) : []
+    while (row.length < rounds) row.push(true)
+    out[playerId] = row
+  }
+  return out
+}
 
 function usePlayers() {
   const roster = useStore((s) => s.roster)
@@ -68,7 +82,7 @@ function PlayersCard({ onEdit }: { onEdit: (id: string | null) => void }) {
                   e.preventDefault()
                   onEdit(p.id)
                 }}
-                className="min-w-0 flex-1 truncate px-2.5 text-left font-medium"
+                className="min-w-0 flex-1 truncate px-1.5 text-left font-medium"
               >
                 {p.id}
                 {overrides[p.id] ? ' ✎' : ''}
@@ -77,7 +91,7 @@ function PlayersCard({ onEdit }: { onEdit: (id: string | null) => void }) {
                 aria-label={`Edit ${p.id}`}
                 title="Edit specs"
                 onClick={() => onEdit(p.id)}
-                className={`px-2 text-xs ${on ? 'text-black/60 hover:text-black' : 'text-muted hover:text-white'}`}
+                className={`px-1.5 text-xs ${on ? 'text-black/60 hover:text-black' : 'text-muted hover:text-white'}`}
               >
                 ✎
               </button>
@@ -117,11 +131,16 @@ function PlayersCard({ onEdit }: { onEdit: (id: string | null) => void }) {
   )
 }
 
-function InfoCard() {
+function InfoCard({ availability, setAvailability }: { availability: AvailabilityMap; setAvailability: Dispatch<SetStateAction<AvailabilityMap>> }) {
   const players = usePlayers()
   const selected = useStore((s) => s.selected)
+  const roundCount = useStore((s) => s.settings?.numRounds ?? 0)
   const byId = useMemo(() => new Map(players.map((p) => [p.id, p])), [players])
   const chosen = selected.map((id) => byId.get(id)).filter((p) => p !== undefined)
+  const chosenSorted = useMemo(
+    () => [...chosen].sort((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: 'base' })),
+    [chosen],
+  )
   const levels = chosen.map((p) => Number(p.Level)).sort((a, b) => a - b)
   const males = chosen.filter((p) => p.Gender === 'Male').length
   const q33 = quantile(levels, 0.33)
@@ -129,6 +148,70 @@ function InfoCard() {
   const count = (test: (level: number) => boolean) => levels.filter(test).length
   const mean = levels.reduce((a, b) => a + b, 0) / (levels.length || 1)
   const R = levels.length ? (quantile(levels, 0.9) - quantile(levels, 0.1)) : 0
+  const [undoStack, setUndoStack] = useState<AvailabilityChange[][]>([])
+  useEffect(() => {
+    setUndoStack([])
+  }, [selected.join('|'), roundCount])
+
+  const applyAvailabilityChanges = (changes: AvailabilityChange[]) => {
+    const effective = changes.filter((c) => c.previous !== c.next)
+    if (!effective.length) return
+    setAvailability((prev) => {
+      const next = { ...prev }
+      for (const c of effective) {
+        const row = [...(next[c.playerId] ?? Array.from({ length: roundCount }, () => true))]
+        while (row.length < roundCount) row.push(true)
+        row[c.round] = c.next
+        next[c.playerId] = row
+      }
+      return next
+    })
+    setUndoStack((stack) => [...stack, effective])
+  }
+
+  const setAll = (value: boolean) => {
+    const changes: AvailabilityChange[] = []
+    for (const p of chosenSorted) {
+      const row = availability[p.id] ?? Array.from({ length: roundCount }, () => true)
+      for (let r = 0; r < roundCount; r += 1) {
+        const previous = row[r] ?? true
+        changes.push({ playerId: p.id, round: r, previous, next: value })
+      }
+    }
+    applyAvailabilityChanges(changes)
+  }
+
+  const setRoundIn = (round: number) => {
+    const changes: AvailabilityChange[] = []
+    for (const p of chosenSorted) {
+      const row = availability[p.id] ?? Array.from({ length: roundCount }, () => true)
+      const previous = row[round] ?? true
+      changes.push({ playerId: p.id, round, previous, next: true })
+    }
+    applyAvailabilityChanges(changes)
+  }
+
+  const toggleCell = (playerId: string, round: number) => {
+    const row = availability[playerId] ?? Array.from({ length: roundCount }, () => true)
+    const previous = row[round] ?? true
+    applyAvailabilityChanges([{ playerId, round, previous, next: !previous }])
+  }
+
+  const undo = () => {
+    const frame = undoStack[undoStack.length - 1]
+    if (!frame) return
+    setAvailability((prev) => {
+      const next = { ...prev }
+      for (const c of frame) {
+        const row = [...(next[c.playerId] ?? Array.from({ length: roundCount }, () => true))]
+        while (row.length < roundCount) row.push(true)
+        row[c.round] = c.previous
+        next[c.playerId] = row
+      }
+      return next
+    })
+    setUndoStack((stack) => stack.slice(0, -1))
+  }
 
   return (
     <Card title="Selected players info">
@@ -164,19 +247,71 @@ function InfoCard() {
             <dt>Roster spread (R)</dt>
             <dd className="tabular-nums">{R.toFixed(2)}</dd>
           </dl>
-          <details>
-            <summary className="cursor-pointer text-muted">Players in selection order</summary>
-            <ul className="scroll-thin mt-2 max-h-48 space-y-0.5 overflow-y-auto font-mono text-xs">
-              {chosen.map((p) => (
-                <li key={p.id} className="flex justify-between gap-2">
-                  <span>{p.id}</span>
-                  <span className="text-muted">
-                    {p.Gender} · {p.Level}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </details>
+          <div className="space-y-2 rounded-lg border border-line bg-ink/40 p-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-soft">Participation by round</p>
+              <Button className="min-h-8 py-1" disabled={!undoStack.length} onClick={undo}>
+                Undo
+              </Button>
+            </div>
+            <div className="scroll-thin overflow-auto">
+              <table className="min-w-full border-collapse text-xs">
+                <thead>
+                  <tr>
+                    <th className="sticky left-0 z-30 border border-line bg-ink/95 px-2 py-1 text-left">
+                      <div className="flex flex-col items-start gap-0.5">
+                        <span className="leading-tight">Round<br /></span>
+                        <div className="flex items-center gap-1">
+                          <Button className="min-h-6 px-1 py-0 text-[9px] leading-none" onClick={() => setAll(true)}>All IN</Button>
+                          {/* <Button className="min-h-6 px-1 py-0 text-[9px] leading-none" onClick={() => setAll(false)}>All OUT</Button> */}
+                        </div>
+                      </div>
+                    </th>
+                    {chosenSorted.map((p) => (
+                      <th
+                        key={p.id}
+                        className="border border-line px-1 py-1 text-center align-bottom"
+                        style={{ minWidth: `${Math.max(40, p.id.length * 8)}px` }}
+                      >
+                        <div className="relative mx-auto h-20 overflow-visible" style={{ width: `${Math.max(40, p.id.length * 8)}px` }}>
+                          <span
+                            className="absolute left-1/2 top-1/2 max-w-none -translate-x-1/2 -translate-y-1/2 origin-center -rotate-45 whitespace-nowrap font-semibold"
+                            title={p.id}
+                          >
+                            {p.id}
+                          </span>
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: roundCount }, (_, round) => (
+                    <tr key={round}>
+                      <td className="sticky left-0 z-20 border border-line bg-ink/95 px-2 py-1 font-semibold">
+                        <Button className="min-h-7 py-0.5 px-2" onClick={() => setRoundIn(round)}>
+                          R{round + 1} IN
+                        </Button>
+                      </td>
+                      {chosenSorted.map((p) => {
+                        const isIn = availability[p.id]?.[round] ?? true
+                        return (
+                          <td key={p.id} className="border border-line px-1 py-1 text-center">
+                            <button
+                              className={`min-h-7 min-w-10 rounded px-1 py-0.5 font-semibold ${isIn ? 'bg-[#1f7a3f] text-white' : 'bg-[#7f0301] text-white'}`}
+                              onClick={() => toggleCell(p.id, round)}
+                            >
+                              {isIn ? 'IN' : 'OUT'}
+                            </button>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
     </Card>
@@ -409,7 +544,7 @@ function ConsoleCard() {
   )
 }
 
-function RunBar() {
+function RunBar({ availability }: { availability: AvailabilityMap }) {
   const players = usePlayers()
   const state = useStore()
   const [progress, setProgress] = useState<{ seed: number; first: number; last: number } | null>(null)
@@ -438,6 +573,15 @@ function RunBar() {
       await generateSession(
         {
           players: chosen,
+          availability: Object.fromEntries(
+            chosen.map((p) => {
+              const row = availability[p.id]
+              const normalized = Array.isArray(row) && row.length === settings.numRounds
+                ? row.map(Boolean)
+                : Array.from({ length: settings.numRounds }, () => true)
+              return [p.id, normalized]
+            }),
+          ),
           amount_of_rounds: settings.numRounds,
           type_preferences: settings.roundTypes,
           gender_preferences: settings.roundGenders,
@@ -537,7 +681,15 @@ function RunBar() {
 
 export function GenerateScreen() {
   const roster = useStore((s) => s.roster)
+  const selected = useStore((s) => s.selected)
+  const numRounds = useStore((s) => s.settings?.numRounds ?? 0)
+  const availability = useStore((s) => s.generationAvailability)
+  const setAvailability = useStore((s) => s.setGenerationAvailability)
   const [editing, setEditing] = useState<string | null | undefined>(undefined)
+
+  useEffect(() => {
+    setAvailability((prev) => normalizeAvailability(prev, selected, numRounds))
+  }, [selected, numRounds, setAvailability])
 
   if (roster.length === 0) {
     return (
@@ -558,16 +710,16 @@ export function GenerateScreen() {
   return (
     <div className="space-y-4">
       <UnsavedBanner />
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,2.2fr)_minmax(0,2.8fr)]">
         <PlayersCard onEdit={setEditing} />
-        <InfoCard />
+        <InfoCard availability={availability} setAvailability={setAvailability} />
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <RoundsCard />
         <ParametersCard />
       </div>
       <ConsoleCard />
-      <RunBar />
+      <RunBar availability={availability} />
       {editing !== undefined && <PlayerDialog playerId={editing} onClose={() => setEditing(undefined)} />}
     </div>
   )

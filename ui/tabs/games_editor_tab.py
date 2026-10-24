@@ -689,7 +689,7 @@ class GamesEditorTabMixin:
                         col_idx,
                     )
 
-            # Not playing section
+            # Benched-out section
             if game_round.not_playing:
                 not_playing_frame = tk.Frame(
                     round_column, bg="#FFF8DC", relief=tk.RIDGE, bd=2
@@ -698,7 +698,7 @@ class GamesEditorTabMixin:
 
                 not_playing_label = tk.Label(
                     not_playing_frame,
-                    text="Not Playing:",
+                    text="Benched out:",
                     font=self.games_editor_button_font,
                     fg=self.colors["text_dark"],
                     bg="#FFF8DC",
@@ -722,6 +722,38 @@ class GamesEditorTabMixin:
                         row,
                         col,
                     )
+
+            not_available_players = list(getattr(game_round, "not_available", []) or [])
+            if not_available_players:
+                not_available_frame = tk.Frame(
+                    round_column, bg="#F2F2F2", relief=tk.RIDGE, bd=2
+                )
+                not_available_frame.pack(fill=tk.X, pady=(0, 6))
+                tk.Label(
+                    not_available_frame,
+                    text="Not available:",
+                    font=self.games_editor_button_font,
+                    fg=self.colors["text_dark"],
+                    bg="#F2F2F2",
+                ).pack(pady=(3, 0))
+                not_available_grid = tk.Frame(not_available_frame, bg="#F2F2F2")
+                not_available_grid.pack(pady=(0, 3))
+                for idx, player in enumerate(not_available_players):
+                    row = idx // 4
+                    col = idx % 4
+                    tk.Label(
+                        not_available_grid,
+                        text=self._format_player_button_text(player),
+                        font=getattr(
+                            self, "games_editor_player_button_font", self.fonts["small"]
+                        ),
+                        bg="#E6E6E6",
+                        fg=self.colors["text_dark"],
+                        relief=tk.GROOVE,
+                        bd=1,
+                        padx=6,
+                        pady=4,
+                    ).grid(row=row, column=col, padx=2, pady=2, sticky=tk.EW)
 
         # Bind mouse wheel for scrolling
         def on_mousewheel(event):
