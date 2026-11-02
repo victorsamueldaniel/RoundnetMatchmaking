@@ -60,7 +60,7 @@ _EXTRA_DEFAULTS: dict = {
     "first_seed": 0,
     "last_seed": 9,
     "num_iter": 435,
-    "weight_same_teammate": 5,
+    "weight_same_teammate": 1,
     "never_met_bonus_per_player": 2,
     "never_met_bonus_cap": 4,
     "objective": {

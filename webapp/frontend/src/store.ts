@@ -35,6 +35,7 @@ export type Confirmable = {
 
 export type PendingSwap = { round: number; a: string; b: string }
 export type GenerationAvailability = Record<string, boolean[]>
+export type GenerationMatrixRows = string[]
 
 export type RecentSession = { savedAt: string; label: string; document: SessionDocument }
 
@@ -54,6 +55,7 @@ type State = Confirmable & {
   showLevels: boolean
   consoleText: string
   generationAvailability: GenerationAvailability
+  generationMatrixRows: GenerationMatrixRows
 
   setTab: (tab: Tab) => void
   applyDefaults: (defaults: Defaults) => void
@@ -80,6 +82,9 @@ type State = Confirmable & {
   clearConsole: () => void
   setGenerationAvailability: (
     value: GenerationAvailability | ((prev: GenerationAvailability) => GenerationAvailability),
+  ) => void
+  setGenerationMatrixRows: (
+    value: GenerationMatrixRows | ((prev: GenerationMatrixRows) => GenerationMatrixRows),
   ) => void
 }
 
@@ -161,6 +166,7 @@ export const useStore = create<State>()(
       showLevels: false,
       consoleText: '',
       generationAvailability: {},
+      generationMatrixRows: [],
 
       setTab: (tab) => set({ tab }),
       applyDefaults: (defaults) =>
@@ -186,12 +192,14 @@ export const useStore = create<State>()(
             if (!ids.has(playerId)) continue
             nextAvailability[playerId] = Array.isArray(row) ? row.map(Boolean) : []
           }
+          const nextMatrixRows = s.generationMatrixRows.filter((playerId) => ids.has(playerId))
           return {
             roster: players,
             overrides: {},
             selected: s.selected.filter((id) => ids.has(id)),
             pairs: s.pairs.filter((pair) => pair.players.every((id) => ids.has(id))),
             generationAvailability: nextAvailability,
+            generationMatrixRows: nextMatrixRows,
           }
         }),
       upsertPlayer: (player) =>
@@ -379,6 +387,10 @@ export const useStore = create<State>()(
         set((s) => ({
           generationAvailability: typeof value === 'function' ? value(s.generationAvailability) : value,
         })),
+      setGenerationMatrixRows: (value) =>
+        set((s) => ({
+          generationMatrixRows: typeof value === 'function' ? value(s.generationMatrixRows) : value,
+        })),
     }),
     {
       name: 'roundnet-matchmaking',
@@ -393,6 +405,8 @@ export const useStore = create<State>()(
         document: s.document,
         history: s.history,
         recent: s.recent,
+        generationAvailability: s.generationAvailability,
+        generationMatrixRows: s.generationMatrixRows,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {

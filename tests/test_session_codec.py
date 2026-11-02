@@ -120,10 +120,88 @@ def test_round_trip_keeps_partial_availability():
     )
     reloaded = decode_session(doc)
 
-    assert doc["availability"]["P0"] == [True, False, True, True]
+    for round_index, round_doc in enumerate(doc["rounds"]):
+        unavailable = set(round_doc.get("not_available", []))
+        for player in players:
+            player_id = player["id"]
+            is_available = doc["availability"][player_id][round_index]
+            assert is_available == (player_id not in unavailable)
     unavailable_by_round = [
         {p.name for p in getattr(round_obj, "not_available", [])}
         for round_obj in reloaded.rounds
     ]
     assert any("P0" in names for names in unavailable_by_round)
     assert any("P1" in names for names in unavailable_by_round)
+
+
+def test_encoded_availability_matches_not_available_after_round_reordering():
+    players = _players(8)
+    availability = {player["id"]: [True, True, True, True] for player in players}
+    availability["P0"] = [False, True, False, True]
+    availability["P1"] = [True, False, True, False]
+
+    session, seed = run_session_generation_with_seed_optimization(
+        players_dataframe(players),
+        amount_of_rounds=4,
+        player_round_availability=availability,
+        type_preferences=["balanced", "balanced", "level", "level"],
+        gender_preferences=["open", "open", "open", "open"],
+        rounds_reordering=[3, 4, 1, 2],
+        level_gap_tol=3,
+        num_iter=50,
+        first_seed=0,
+        last_seed=0,
+        print_progress=False,
+    )
+    doc = encode_session(
+        session,
+        players,
+        {"num_iter": 50, "games_per_round": "auto"},
+        [],
+        seed=seed,
+    )
+
+    for round_index, round_doc in enumerate(doc["rounds"]):
+        unavailable = set(round_doc.get("not_available", []))
+        for player in players:
+            player_id = player["id"]
+            is_available = doc["availability"][player_id][round_index]
+            assert is_available == (player_id not in unavailable)
+
+
+def test_roster_spread_can_use_full_roster_reference():
+    players = _players(8)
+    selected = players[:4]
+    reference_levels = [float(p["Level"]) for p in players]
+    expected_spread = float(np.percentile(reference_levels, 90) - np.percentile(reference_levels, 10))
+
+    session, seed = run_session_generation_with_seed_optimization(
+        players_dataframe(selected),
+        amount_of_rounds=2,
+        type_preferences=["balanced", "level"],
+        gender_preferences=["open", "open"],
+        num_iter=20,
+        first_seed=0,
+        last_seed=0,
+        print_progress=False,
+        roster_spread_levels_reference=reference_levels,
+    )
+    assert all(
+        abs(getattr(round_obj, "roster_spread_R", 0.0) - expected_spread) < 1e-9
+        for round_obj in session.rounds
+    )
+
+    doc = encode_session(
+        session,
+        selected,
+        {"num_iter": 20, "games_per_round": "auto"},
+        [],
+        seed=seed,
+    )
+    assert abs(float(doc["params"]["roster_spread_R"]) - expected_spread) < 1e-9
+
+    reloaded = decode_session(doc)
+    assert all(
+        abs(getattr(round_obj, "roster_spread_R", 0.0) - expected_spread) < 1e-9
+        for round_obj in reloaded.rounds
+    )

@@ -519,7 +519,7 @@ class Player:
             # Use explicit non-overlapping bands (half-open intervals) consistently
             is_equilibrist = abs(d) < t_eq
             is_prey = d <= -t_chlgr if t_chlgr is not None else False
-            is_hunter = d >= t_chlgr if t_chlgr is not None else False
+            is_hunter = d >= t_eq if t_eq is not None else False
             is_challenger = (
                 ((-d) > t_eq and (-d) < t_chlgr) if t_chlgr is not None else False
             )
@@ -902,6 +902,7 @@ class GamesRound:
     def __init__(
         self,
         list_of_players,
+        roster_spread_levels_reference=None,
         available_player_names=None,
         previous_games_rounds_anti_chron=[],
         teams_per_game=2,
@@ -958,6 +959,11 @@ class GamesRound:
         }
         self.teams_per_game = teams_per_game
         self.players_per_team = players_per_team
+        max_games_from_available_players = len(self.participants) // (
+            self.teams_per_game * self.players_per_team
+        )
+        if self.amount_of_games > max_games_from_available_players:
+            self.amount_of_games = max_games_from_available_players
         self.num_iter = num_iter
         self.level_gap_tol = level_gap_tol
         self.spectrum = spectrum
@@ -983,7 +989,15 @@ class GamesRound:
         )
         # R: roster spread (robust) defined as p90 - p10 of player levels
         try:
-            levels = np.array([player.level for player in list_of_players], dtype=float)
+            if (
+                isinstance(roster_spread_levels_reference, (list, tuple))
+                and len(roster_spread_levels_reference) > 0
+            ):
+                levels = np.array(roster_spread_levels_reference, dtype=float)
+            else:
+                levels = np.array(
+                    [player.level for player in list_of_players], dtype=float
+                )
             p90 = np.percentile(levels, 90)
             p10 = np.percentile(levels, 10)
             self.roster_spread_R = float(p90 - p10)
@@ -1254,7 +1268,12 @@ class GamesRound:
         return sorted(players, key=lambda p: (-p.level, p.happiness), reverse=True)
 
     def _choose_benched_players_from_bucket(
-        self, ranked_bucket, bench_count, remaining_gender_targets, bench_counts
+        self,
+        ranked_bucket,
+        bench_count,
+        remaining_gender_targets,
+        bench_counts,
+        available_counts,
     ):
         """Choose who sits out inside one games-played bucket.
 
@@ -1266,9 +1285,15 @@ class GamesRound:
 
         chosen = []
         chosen_ids = set()
-        if bench_counts:
+        if bench_counts or available_counts:
             bench_count_levels = sorted(
-                {bench_counts.get(player.name, 0) for player in ranked_bucket}
+                {
+                    (
+                        bench_counts.get(player.name, 0)
+                        / max(1, available_counts.get(player.name, 0))
+                    )
+                    for player in ranked_bucket
+                }
             )
         else:
             bench_count_levels = [None]
@@ -1285,7 +1310,11 @@ class GamesRound:
                     player
                     for player in ranked_bucket
                     if id(player) not in chosen_ids
-                    and bench_counts.get(player.name, 0) == level
+                    and (
+                        bench_counts.get(player.name, 0)
+                        / max(1, available_counts.get(player.name, 0))
+                    )
+                    == level
                 ]
             if not level_bucket:
                 continue
@@ -1323,12 +1352,15 @@ class GamesRound:
 
         return chosen
 
-    def _bench_counts_from_previous_rounds(self):
-        counts = defaultdict(int)
+    def _bench_history_from_previous_rounds(self):
+        bench_counts = defaultdict(int)
+        available_counts = defaultdict(int)
         for previous_round in self.previous_games:
+            for player in getattr(previous_round, "participants", []):
+                available_counts[player.name] += 1
             for player in getattr(previous_round, "not_playing", []):
-                counts[player.name] += 1
-        return counts
+                bench_counts[player.name] += 1
+        return bench_counts, available_counts
 
     def create_games(self, seed=None):
 
@@ -1353,11 +1385,16 @@ class GamesRound:
             self.games = []
             self.teams = set()
             return
+        if self.amount_of_games <= 0:
+            self.people_playing = []
+            self.games = []
+            self.teams = set()
+            return
 
         remaining_gender_targets = self._bench_gender_targets_for_mixed_level_round(
             amount_non_playing
         )
-        bench_counts = self._bench_counts_from_previous_rounds()
+        bench_counts, available_counts = self._bench_history_from_previous_rounds()
         shuffled_players = self.participants.copy()
         random.shuffle(shuffled_players)
         shuffle_position = {
@@ -1380,6 +1417,7 @@ class GamesRound:
             amount_non_playing,
             remaining_gender_targets,
             bench_counts,
+            available_counts,
         )
         benched_ids = {id(player) for player in bucket_benched}
         self.people_playing = [
@@ -2289,6 +2327,7 @@ class SessionOfRounds:
         list_of_players,
         amount_of_rounds=4,
         player_round_availability=None,
+        roster_spread_levels_reference=None,
         games_per_round_each_round=None,
         players_per_team_each_round=None,
         type_preferences=["balanced", "balanced", "level", "level"],
@@ -2324,6 +2363,7 @@ class SessionOfRounds:
 
         self.players = list_of_players
         self.players_name = [player.name for player in list_of_players]
+        self.roster_spread_levels_reference = roster_spread_levels_reference
         self.player_round_availability = self._normalize_player_round_availability(
             player_round_availability
         )
@@ -2544,14 +2584,6 @@ class SessionOfRounds:
             self.gender_preferences = [
                 self.gender_preferences[i - 1] for i in order_num_list
             ]
-        if hasattr(self, "player_round_availability") and isinstance(
-            self.player_round_availability, dict
-        ):
-            for player_name, row in self.player_round_availability.items():
-                if isinstance(row, list) and len(row) >= len(order_num_list):
-                    self.player_round_availability[player_name] = [
-                        row[i - 1] for i in order_num_list
-                    ]
 
         # Reorder all player histories to match the new round order
         for player in self.players:
@@ -2646,13 +2678,25 @@ class SessionOfRounds:
             available_player_names = [
                 player_name
                 for player_name, row in self.player_round_availability.items()
-                if availability_round_idx < len(row) and bool(row[availability_round_idx])
+                if availability_round_idx < len(row)
+                and bool(row[availability_round_idx])
             ]
+            requested_games = int(self.games_per_round_each_round[i])
+            max_games_this_round = len(available_player_names) // (
+                self.players_per_team_each_round[i] * 2
+            )
+            effective_games = min(requested_games, max_games_this_round)
+            if effective_games < requested_games:
+                print(
+                    f"Round {i + 1}: reducing games from {requested_games} to {effective_games} "
+                    f"because only {len(available_player_names)} players are available."
+                )
             rounds.append(
                 GamesRound(
                     list_of_players=self.players,
+                    roster_spread_levels_reference=self.roster_spread_levels_reference,
                     available_player_names=available_player_names,
-                    amount_of_games=self.games_per_round_each_round[i],
+                    amount_of_games=effective_games,
                     players_per_team=self.players_per_team_each_round[i],
                     previous_games_rounds_anti_chron=rounds,
                     type_preference=self.type_preferences[i],

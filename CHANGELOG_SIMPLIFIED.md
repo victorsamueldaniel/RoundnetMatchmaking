@@ -1,3 +1,15 @@
+# Version 2.1.0 — November 2, 2026
+## What's new?
+- **Partial participation is now first-class** (desktop + web): set player IN/OUT by round, undo edits, and keep `Not available` separate from `Benched out`.
+- **Web participation editor redesign**: dynamic player-row controls in the Session tab matrix, with row visibility and IN/OUT values preserved across generation/tab switches.
+- **Roster spread (R) semantics updated**: R is now computed at generation time from the full app roster (including non-selected players), not only selected/available session players.
+- **More robust generation under partial availability**: when a round has too few available players, games-per-round is reduced to the feasible maximum.
+
+## Bug fixes
+- Fixed availability mismatches between Session and Editor views after generation/reordering.
+- Fixed availability resets/disappearance in the web Session tab after running generation.
+- Reduced unfair over-benching patterns by using availability-aware balancing in display order.
+
 # Version 2.0.0 — September 20, 2026
 ## What's new?
 - **Web app**: the whole app now runs in the browser on a phone or a computer, not just as a desktop app. You can import players, generate sessions, edit rounds, view charts, and download results directly from the web interface.

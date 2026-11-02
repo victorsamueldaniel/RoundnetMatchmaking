@@ -1,5 +1,22 @@
 # Changelog
 All notable changes to this project are documented in this file.
+
+## [2.1.0] - 2026-11-02
+### Added
+- Partial participation workflow across desktop and web: per-round player availability editing (IN/OUT) with undo, plus separate `not_available` vs `benched out` tracking in generated rounds.
+- Generation-time support for computing roster spread `R` from the full app roster (including non-selected players), then persisting it in session params for reproducible reloads.
+- Extra regression coverage for availability/round-order consistency, partial-availability generation, and roster-spread behavior.
+
+### Changed
+- Session generation fairness now follows display-order behavior with availability-aware bench balancing.
+- Web Session-generation participation matrix UX was redesigned (dynamic row insertion/removal, persisted matrix rows, preserved IN/OUT values on re-add).
+- When availability reduces playable headcount in a round, game count is auto-reduced to the feasible maximum.
+
+### Fixed
+- Availability mismatches after generation/reordering between Session and Editor views.
+- Cases where generation produced pathological all-benched rounds when at least one game was feasible.
+- Availability reset/loss in web Session tab after running generation or switching tabs.
+
 ## [2.0.0] - 2026-09-20
 ### Added
 - Web app (`webapp/`): a FastAPI server on top of `core/` and a React + TypeScript client that runs on phones and computers, with feature parity for player import and edits, round preferences, preferred pairs, advanced parameters, streamed generation, games editor, round reordering, Excel/PNG/JSON/text downloads, chart tabs, contact info, and anonymised bug reports. Deployable on Railway through `Dockerfile` and `railway.json`. See `docs/WEBAPP.md`.

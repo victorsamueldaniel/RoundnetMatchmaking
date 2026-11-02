@@ -72,7 +72,7 @@ def round_breakdown(round_obj, round_idx):
                         t_chlgr = 0.2 * R
                         is_equilibrist = abs(d) < t_eq
                         is_prey = d <= -t_chlgr
-                        is_hunter = d >= t_chlgr
+                        is_hunter = d >= t_eq
                         # Challenger only within the band (user requested)
                         is_challenger = (-d) > t_eq and (-d) < t_chlgr
                         triggers = {
@@ -96,7 +96,7 @@ def round_breakdown(round_obj, round_idx):
                         )
                         is_equilibrist = abs(d) < t_eq
                         is_prey = d <= -t_chlgr
-                        is_hunter = d >= t_chlgr
+                        is_hunter = d >= t_eq
                         is_challenger = (-d) > t_eq and (-d) < t_chlgr
                         triggers = {
                             "Prey": bool(is_prey)

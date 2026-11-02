@@ -74,6 +74,10 @@ def encode_session(session, players, params, preferred_pairs, seed=None):
     games_per_round_pref = getattr(session, "_games_per_round_preference", None)
     if games_per_round_pref is not None:
         params.setdefault("games_per_round", games_per_round_pref)
+    if getattr(session, "rounds", None):
+        roster_spread = getattr(session.rounds[0], "roster_spread_R", None)
+        if roster_spread is not None:
+            params["roster_spread_R"] = float(roster_spread)
 
     rounds = []
     for r in session.rounds:
@@ -94,13 +98,26 @@ def encode_session(session, players, params, preferred_pairs, seed=None):
                 ],
             }
         )
-    availability = getattr(session, "player_round_availability", None)
-    if not isinstance(availability, dict):
-        availability = {
-            p["id"]: [True] * len(rounds)
-            for p in players
-            if isinstance(p, dict) and isinstance(p.get("id"), str)
-        }
+    player_ids = [
+        p["id"] for p in players if isinstance(p, dict) and isinstance(p.get("id"), str)
+    ]
+    availability = {player_id: [True] * len(rounds) for player_id in player_ids}
+    if len(rounds) and len(getattr(session, "rounds", [])) == len(rounds):
+        for round_idx, round_obj in enumerate(session.rounds):
+            for player in getattr(round_obj, "not_available", []):
+                player_name = getattr(player, "name", None)
+                if player_name in availability:
+                    availability[player_name][round_idx] = False
+    else:
+        raw_availability = getattr(session, "player_round_availability", None)
+        if isinstance(raw_availability, dict):
+            for player_id in player_ids:
+                row = raw_availability.get(player_id)
+                if isinstance(row, (list, tuple)):
+                    normalized = [bool(v) for v in row[: len(rounds)]]
+                    if len(normalized) < len(rounds):
+                        normalized.extend([True] * (len(rounds) - len(normalized)))
+                    availability[player_id] = normalized
     return {
         "version": DOCUMENT_VERSION,
         "seed": seed,
@@ -175,6 +192,7 @@ def decode_session(doc):
     session.players_per_team_each_round = [2] * len(doc["rounds"])
     session._calculate_gender_distribution()
     median_level = np.median([p.level for p in players])
+    roster_spread_override = params.get("roster_spread_R")
 
     session.rounds = []
     for r in doc["rounds"]:
@@ -203,10 +221,13 @@ def decode_session(doc):
         round_.session_median_level = median_level
         # Compute roster spread R (p90 - p10) to match GamesRound.__init__ behavior
         try:
-            levels = np.array([p.level for p in round_.participants], dtype=float)
-            p90 = np.percentile(levels, 90)
-            p10 = np.percentile(levels, 10)
-            round_.roster_spread_R = float(p90 - p10)
+            if isinstance(roster_spread_override, (int, float)):
+                round_.roster_spread_R = float(roster_spread_override)
+            else:
+                levels = np.array([p.level for p in round_.participants], dtype=float)
+                p90 = np.percentile(levels, 90)
+                p10 = np.percentile(levels, 10)
+                round_.roster_spread_R = float(p90 - p10)
         except Exception:
             round_.roster_spread_R = None
         round_.weight_same_teammate = session.weight_same_teammate

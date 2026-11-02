@@ -92,6 +92,7 @@ def _clean(value):
 
 class GenerateRequest(BaseModel):
     players: list[dict] = Field(min_length=4, max_length=MAX_PLAYERS)
+    roster_players: list[dict] | None = None
     amount_of_rounds: int = Field(ge=1, le=10)
     type_preferences: list[str]
     gender_preferences: list[str]
@@ -314,6 +315,20 @@ def generate(request: GenerateRequest):
         raise HTTPException(422, f"num_iter must be between 1 and {MAX_NUM_ITER}.")
 
     players = _apply_female_shift(request.players, request.female_shift)
+    roster_players_source = (
+        request.roster_players
+        if isinstance(request.roster_players, list) and request.roster_players
+        else request.players
+    )
+    roster_players = _apply_female_shift(roster_players_source, request.female_shift)
+    roster_spread_levels_reference = []
+    for player in roster_players:
+        try:
+            level = float(player.get("Level"))
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(level):
+            roster_spread_levels_reference.append(level)
     pairs = _pairs(request.preferred_pairs)
     params = {
         "level_gap_tol": request.level_gap_tol,
@@ -341,12 +356,6 @@ def generate(request: GenerateRequest):
             normalized_availability[player_id] = [bool(v) for v in row]
         else:
             normalized_availability[player_id] = [True] * request.amount_of_rounds
-    priority = {"level": 0, "balanced": 1}
-    generated_order = sorted(
-        range(request.amount_of_rounds),
-        key=lambda i: (priority.get(request.type_preferences[i], 2), i),
-    )
-    reordering = [generated_order.index(i) + 1 for i in range(request.amount_of_rounds)]
     events = queue.Queue()
     cancelled = threading.Event()
 
@@ -376,9 +385,10 @@ def generate(request: GenerateRequest):
                     df=                    players_dataframe(players),
                     amount_of_rounds=request.amount_of_rounds,
                     player_round_availability=normalized_availability,
+                    roster_spread_levels_reference=roster_spread_levels_reference,
                     type_preferences=request.type_preferences,
                     gender_preferences=request.gender_preferences,
-                    rounds_reordering=reordering,
+                    rounds_reordering=None,
                     level_gap_tol=request.level_gap_tol,
                     num_iter=params["num_iter"],
                     lambda_weight=request.lambda_weight,
@@ -399,6 +409,7 @@ def generate(request: GenerateRequest):
                     or len(players) // 4,
                     print_progress=bool(extra.get("print_progress", True)),
                     progress_callback=progress,
+                    prioritize_level_rounds=False,
                 )
                 session._games_per_round_preference = params["games_per_round"]
                 if pairs:
@@ -412,7 +423,6 @@ def generate(request: GenerateRequest):
                         score_tolerance=float(tolerance.get("score_tolerance", 0.10)),
                     )
                     apply_preferred_pairs_happiness(session, pairs)
-                params["rounds_reordering"] = reordering
                 document = encode_session(session, players, params, pairs, seed=seed)
                 reloaded = _decode(document)
                 print("=" * 80)

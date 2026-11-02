@@ -6,7 +6,7 @@ Usage:
 
 Examples:
     python build_exe.py
-    python build_exe.py --version 2.0.0
+    python build_exe.py --version 2.1.0
         -> dist folder: RoundnetMatchmaking_2_0_0/
         -> Windows exe: RoundnetMatchmaking_2_0_0.exe
         -> macOS app:   RoundnetMatchmaking_2_0_0.app

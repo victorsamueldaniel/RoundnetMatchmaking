@@ -252,6 +252,90 @@ def test_partial_availability_keeps_benching_fairness_without_counting_absences(
     ), "A player was benched twice before all available players were benched once."
 
 
+def test_partial_availability_auto_reduces_games_instead_of_empty_rounds():
+    df = pd.DataFrame(
+        {
+            "Name": ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"],
+            "Surname": ["S"] * 8,
+            "Level": [2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7],
+            "Noisy level": [0.0] * 8,
+            "Gender": ["Male", "Female", "Male", "Female", "Male", "Female", "Male", "Female"],
+            "Games played": [0] * 8,
+            "Happiness": [0.0] * 8,
+        }
+    ).set_index("Name")
+    players = [Player(df.iloc[i]) for i in range(8)]
+    availability = {name: [True, True] for name in df.index}
+    availability["P8"][0] = False
+    availability["P8"][1] = False
+
+    session = SessionOfRounds(
+        players,
+        amount_of_rounds=2,
+        player_round_availability=availability,
+        games_per_round_each_round=2,
+        type_preferences=["balanced", "balanced"],
+        gender_preferences=["open", "open"],
+        prioritize_level_rounds=False,
+        level_gap_tol=3,
+        num_iter=40,
+        seed=7,
+    )
+
+    for round_obj in session.rounds:
+        assert len(round_obj.not_available) == 1
+        assert len(round_obj.games) == 1
+        assert len(round_obj.not_playing) == 3
+
+
+def test_benching_balance_accounts_for_late_availability():
+    df = pd.DataFrame(
+        {
+            "Name": [f"P{i}" for i in range(1, 9)],
+            "Surname": ["S"] * 8,
+            "Level": [2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7],
+            "Noisy level": [0.0] * 8,
+            "Gender": ["Male", "Female", "Male", "Female", "Male", "Female", "Male", "Female"],
+            "Games played": [0] * 8,
+            "Happiness": [0.0] * 8,
+        }
+    ).set_index("Name")
+    players = [Player(df.iloc[i]) for i in range(8)]
+    availability = {name: [True] * 8 for name in df.index}
+    for r in range(4):
+        availability["P1"][r] = False
+    for r in range(4, 8):
+        availability["P2"][r] = False
+
+    session = SessionOfRounds(
+        players,
+        amount_of_rounds=8,
+        player_round_availability=availability,
+        games_per_round_each_round=1,
+        type_preferences=[
+            "balanced",
+            "balanced",
+            "level",
+            "level",
+            "balanced",
+            "balanced",
+            "level",
+            "level",
+        ],
+        gender_preferences=["open"] * 8,
+        prioritize_level_rounds=False,
+        level_gap_tol=3,
+        num_iter=40,
+        seed=2,
+    )
+
+    late_window_benches = sum(
+        "P1" in [p.name for p in session.rounds[round_idx].not_playing]
+        for round_idx in range(4, 8)
+    )
+    assert late_window_benches <= 2
+
+
 # ---------------------------------------------------------------------------
 # Test 5 â€” iterations telemetry: pass metadata and selected candidate
 # ---------------------------------------------------------------------------

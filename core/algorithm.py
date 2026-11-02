@@ -40,6 +40,7 @@ def run_session_generation_with_seed_optimization(
     df,
     amount_of_rounds=4,
     player_round_availability=None,
+    roster_spread_levels_reference=None,
     type_preferences=None,
     gender_preferences=None,
     rounds_reordering=None,
@@ -59,6 +60,7 @@ def run_session_generation_with_seed_optimization(
     print_progress=True,
     print_all_happiness=False,
     progress_callback=None,
+    prioritize_level_rounds=True,
 ):
     """
     Run multiple session simulations with different seeds to find the best matchmaking configuration.
@@ -154,6 +156,7 @@ def run_session_generation_with_seed_optimization(
             "list_of_players": list_of_players,
             "amount_of_rounds": amount_of_rounds,
             "player_round_availability": player_round_availability,
+            "roster_spread_levels_reference": roster_spread_levels_reference,
             "type_preferences": type_preferences,
             "level_gap_tol": level_gap_tol,
             "num_iter": num_iter,
@@ -167,6 +170,7 @@ def run_session_generation_with_seed_optimization(
             "rounds_reordering": rounds_reordering,
             "gender_preferences": gender_preferences,
             "extra_parameters": extra_parameters,
+            "prioritize_level_rounds": prioritize_level_rounds,
         }
 
         if games_per_round_each_round is not None:

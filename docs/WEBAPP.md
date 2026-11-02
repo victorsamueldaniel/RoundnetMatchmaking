@@ -112,6 +112,16 @@ from the structure in chronological order, which is also what the desktop app do
 reordering rounds. `tests/test_session_codec.py` checks that a generated session reloads with
 exactly the same happiness for every player.
 
+Availability is encoded in the same round order as the saved `rounds` array, so the Session tab
+matrix and Editor tab `not_available` data stay consistent after generation/reordering.
+When partial participation reduces the number of available players in a round, generation now
+auto-reduces that round's game count to the maximum feasible value instead of forcing an empty
+round.
+Benching fairness is evaluated in the same round order shown in the Session tab (display order),
+so availability and bench balancing are consistent with what users see.
+Roster spread `R` is computed at generation time from the full app roster (including players not
+selected for the generated session), then stored in the session parameters for reproducible reloads.
+
 Loading a JSON document cannot run code, unlike `pickle.load`.
 
 ### API
@@ -133,7 +143,7 @@ Loading a JSON document cannot run code, unlike `pickle.load`.
 | Desktop | Web |
 |---|---|
 | First-run wizard, missing values dialog | Same flow on the Session tab when no players are stored |
-| Player grid, info panel, add/edit dialog | Same, plus a name filter; the ✎ button replaces right click on touch screens; Selected players info includes per-round participation (IN/OUT) with undo |
+| Player grid, info panel, add/edit dialog | Same, plus a name filter; the ✎ button replaces right click on touch screens; Selected players info includes an empty-by-default participation matrix (names as rows, rounds as columns), alphabetical add-player buttons, row removal by clicking name, and undo |
 | Round preferences, parameter sliders, spectrum toggle | Same ranges and defaults |
 | Preferred pairs dialog | Same (2 players, 1 to 4 forced games) |
 | `extra_parameters_temp.json` edited by hand | "Advanced" dialog with a JSON editor, import, download, reset |

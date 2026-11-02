@@ -13,6 +13,10 @@ import { FileHelp, PlayerImport } from './PlayerImport'
 
 type AvailabilityMap = Record<string, boolean[]>
 type AvailabilityChange = { playerId: string; round: number; previous: boolean; next: boolean }
+type AvailabilityUndoFrame =
+  | { kind: 'availability'; changes: AvailabilityChange[] }
+  | { kind: 'add-row'; playerId: string }
+  | { kind: 'remove-row'; playerId: string }
 
 function normalizeAvailability(availability: AvailabilityMap, selected: string[], rounds: number): AvailabilityMap {
   const out: AvailabilityMap = {}
@@ -141,37 +145,72 @@ function InfoCard({ availability, setAvailability }: { availability: Availabilit
     () => [...chosen].sort((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: 'base' })),
     [chosen],
   )
+  const rosterLevels = useMemo(
+    () => players.map((p) => Number(p.Level)).filter((v) => Number.isFinite(v)).sort((a, b) => a - b),
+    [players],
+  )
   const levels = chosen.map((p) => Number(p.Level)).sort((a, b) => a - b)
   const males = chosen.filter((p) => p.Gender === 'Male').length
   const q33 = quantile(levels, 0.33)
   const q66 = quantile(levels, 0.66)
   const count = (test: (level: number) => boolean) => levels.filter(test).length
   const mean = levels.reduce((a, b) => a + b, 0) / (levels.length || 1)
-  const R = levels.length ? (quantile(levels, 0.9) - quantile(levels, 0.1)) : 0
-  const [undoStack, setUndoStack] = useState<AvailabilityChange[][]>([])
+  const R = rosterLevels.length ? (quantile(rosterLevels, 0.9) - quantile(rosterLevels, 0.1)) : 0
+  const shownInMatrix = useStore((s) => s.generationMatrixRows)
+  const setShownInMatrix = useStore((s) => s.setGenerationMatrixRows)
+  const [undoStack, setUndoStack] = useState<AvailabilityUndoFrame[]>([])
+  const chosenIds = useMemo(() => chosenSorted.map((p) => p.id), [chosenSorted])
+
+  const ensureRow = (row: boolean[] | undefined) => {
+    const normalized = Array.isArray(row) ? row.slice(0, roundCount).map(Boolean) : []
+    while (normalized.length < roundCount) normalized.push(true)
+    return normalized
+  }
+
+  useEffect(() => {
+    setAvailability((prev) => normalizeAvailability(prev, chosenIds, roundCount))
+    setUndoStack([])
+  }, [chosenIds.join('|'), roundCount, setAvailability])
+
+  useEffect(() => {
+    setShownInMatrix((prev) => {
+      const kept = prev.filter((playerId) => chosenIds.includes(playerId))
+      if (kept.length === prev.length) return prev
+      return kept
+    })
+  }, [chosenIds, setShownInMatrix])
+
+  const shownRows = useMemo(
+    () => chosenSorted.filter((p) => shownInMatrix.includes(p.id)),
+    [chosenSorted, shownInMatrix],
+  )
+  const hiddenRows = useMemo(
+    () => chosenSorted.filter((p) => !shownInMatrix.includes(p.id)),
+    [chosenSorted, shownInMatrix],
+  )
+
   useEffect(() => {
     setUndoStack([])
   }, [selected.join('|'), roundCount])
 
-  const applyAvailabilityChanges = (changes: AvailabilityChange[]) => {
+  const applyAvailabilityChanges = (changes: AvailabilityChange[], pushUndo = true) => {
     const effective = changes.filter((c) => c.previous !== c.next)
     if (!effective.length) return
     setAvailability((prev) => {
       const next = { ...prev }
       for (const c of effective) {
-        const row = [...(next[c.playerId] ?? Array.from({ length: roundCount }, () => true))]
-        while (row.length < roundCount) row.push(true)
+        const row = ensureRow(next[c.playerId])
         row[c.round] = c.next
         next[c.playerId] = row
       }
       return next
     })
-    setUndoStack((stack) => [...stack, effective])
+    if (pushUndo) setUndoStack((stack) => [...stack, { kind: 'availability', changes: effective }])
   }
 
   const setAll = (value: boolean) => {
     const changes: AvailabilityChange[] = []
-    for (const p of chosenSorted) {
+    for (const p of shownRows) {
       const row = availability[p.id] ?? Array.from({ length: roundCount }, () => true)
       for (let r = 0; r < roundCount; r += 1) {
         const previous = row[r] ?? true
@@ -183,7 +222,7 @@ function InfoCard({ availability, setAvailability }: { availability: Availabilit
 
   const setRoundIn = (round: number) => {
     const changes: AvailabilityChange[] = []
-    for (const p of chosenSorted) {
+    for (const p of shownRows) {
       const row = availability[p.id] ?? Array.from({ length: roundCount }, () => true)
       const previous = row[round] ?? true
       changes.push({ playerId: p.id, round, previous, next: true })
@@ -197,19 +236,27 @@ function InfoCard({ availability, setAvailability }: { availability: Availabilit
     applyAvailabilityChanges([{ playerId, round, previous, next: !previous }])
   }
 
+  const addRow = (playerId: string) => {
+    setShownInMatrix((prev) => (prev.includes(playerId) ? prev : [...prev, playerId]))
+    setUndoStack((stack) => [...stack, { kind: 'add-row', playerId }])
+  }
+
+  const removeRow = (playerId: string) => {
+    setShownInMatrix((prev) => prev.filter((id) => id !== playerId))
+    setUndoStack((stack) => [...stack, { kind: 'remove-row', playerId }])
+  }
+
   const undo = () => {
     const frame = undoStack[undoStack.length - 1]
     if (!frame) return
-    setAvailability((prev) => {
-      const next = { ...prev }
-      for (const c of frame) {
-        const row = [...(next[c.playerId] ?? Array.from({ length: roundCount }, () => true))]
-        while (row.length < roundCount) row.push(true)
-        row[c.round] = c.previous
-        next[c.playerId] = row
-      }
-      return next
-    })
+    if (frame.kind === 'availability') {
+      const reverse = frame.changes.map((c) => ({ playerId: c.playerId, round: c.round, previous: c.next, next: c.previous }))
+      applyAvailabilityChanges(reverse, false)
+    } else if (frame.kind === 'add-row') {
+      setShownInMatrix((prev) => prev.filter((id) => id !== frame.playerId))
+    } else if (frame.kind === 'remove-row') {
+      setShownInMatrix((prev) => (prev.includes(frame.playerId) ? prev : [...prev, frame.playerId]))
+    }
     setUndoStack((stack) => stack.slice(0, -1))
   }
 
@@ -254,60 +301,72 @@ function InfoCard({ availability, setAvailability }: { availability: Availabilit
                 Undo
               </Button>
             </div>
+            <div className="flex flex-wrap gap-1.5">
+              {hiddenRows.length === 0 ? (
+                <span className="text-xs text-muted">All selected players are currently shown in the matrix.</span>
+              ) : (
+                hiddenRows.map((p) => (
+                  <Button key={p.id} className="min-h-7 px-2 py-0.5 text-xs" onClick={() => addRow(p.id)}>
+                    {p.id}
+                  </Button>
+                ))
+              )}
+            </div>
             <div className="scroll-thin overflow-auto">
               <table className="min-w-full border-collapse text-xs">
                 <thead>
                   <tr>
                     <th className="sticky left-0 z-30 border border-line bg-ink/95 px-2 py-1 text-left">
                       <div className="flex flex-col items-start gap-0.5">
-                        <span className="leading-tight">Round<br /></span>
+                        <span className="leading-tight">Name<br /></span>
                         <div className="flex items-center gap-1">
                           <Button className="min-h-6 px-1 py-0 text-[9px] leading-none" onClick={() => setAll(true)}>All IN</Button>
-                          {/* <Button className="min-h-6 px-1 py-0 text-[9px] leading-none" onClick={() => setAll(false)}>All OUT</Button> */}
                         </div>
                       </div>
                     </th>
-                    {chosenSorted.map((p) => (
-                      <th
-                        key={p.id}
-                        className="border border-line px-1 py-1 text-center align-bottom"
-                        style={{ minWidth: `${Math.max(40, p.id.length * 8)}px` }}
-                      >
-                        <div className="relative mx-auto h-20 overflow-visible" style={{ width: `${Math.max(40, p.id.length * 8)}px` }}>
-                          <span
-                            className="absolute left-1/2 top-1/2 max-w-none -translate-x-1/2 -translate-y-1/2 origin-center -rotate-45 whitespace-nowrap font-semibold"
-                            title={p.id}
-                          >
-                            {p.id}
-                          </span>
+                    {Array.from({ length: roundCount }, (_, round) => (
+                      <th key={round} className="border border-line px-2 py-1 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <span className="font-semibold">R{round + 1}</span>
+                          <Button className="min-h-6 px-1 py-0 text-[9px] leading-none" onClick={() => setRoundIn(round)}>
+                            IN
+                          </Button>
                         </div>
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {Array.from({ length: roundCount }, (_, round) => (
-                    <tr key={round}>
-                      <td className="sticky left-0 z-20 border border-line bg-ink/95 px-2 py-1 font-semibold">
-                        <Button className="min-h-7 py-0.5 px-2" onClick={() => setRoundIn(round)}>
-                          R{round + 1} IN
-                        </Button>
+                  {shownRows.length === 0 ? (
+                    <tr>
+                      <td className="border border-line px-2 py-2 text-muted" colSpan={roundCount + 1}>
+                        Matrix is empty. Click player buttons above to add rows.
                       </td>
-                      {chosenSorted.map((p) => {
-                        const isIn = availability[p.id]?.[round] ?? true
-                        return (
-                          <td key={p.id} className="border border-line px-1 py-1 text-center">
-                            <button
-                              className={`min-h-7 min-w-10 rounded px-1 py-0.5 font-semibold ${isIn ? 'bg-[#1f7a3f] text-white' : 'bg-[#7f0301] text-white'}`}
-                              onClick={() => toggleCell(p.id, round)}
-                            >
-                              {isIn ? 'IN' : 'OUT'}
-                            </button>
-                          </td>
-                        )
-                      })}
                     </tr>
-                  ))}
+                  ) : (
+                    shownRows.map((p) => (
+                      <tr key={p.id}>
+                        <td className="sticky left-0 z-20 border border-line bg-ink/95 px-2 py-1 font-semibold">
+                          <button className="rounded px-1 py-0.5 text-left hover:bg-white/10" onClick={() => removeRow(p.id)}>
+                            {p.id}
+                          </button>
+                        </td>
+                        {Array.from({ length: roundCount }, (_, round) => {
+                          const isIn = availability[p.id]?.[round] ?? true
+                          return (
+                            <td key={round} className="border border-line px-1 py-1 text-center">
+                              <button
+                                className={`min-h-7 min-w-10 rounded px-1 py-0.5 font-semibold ${isIn ? 'bg-[#1f7a3f] text-white' : 'bg-[#7f0301] text-white'}`}
+                                onClick={() => toggleCell(p.id, round)}
+                              >
+                                {isIn ? 'IN' : 'OUT'}
+                              </button>
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -573,6 +632,7 @@ function RunBar({ availability }: { availability: AvailabilityMap }) {
       await generateSession(
         {
           players: chosen,
+          roster_players: players,
           availability: Object.fromEntries(
             chosen.map((p) => {
               const row = availability[p.id]

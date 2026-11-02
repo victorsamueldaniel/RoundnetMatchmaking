@@ -17,7 +17,6 @@ from ui.functions.ui_helpers import (
     ConsoleRedirector,
     ProgressDialog,
 )
-from ui.functions.tab_functions import session_generation_round_type_priority
 
 main_module = None
 
@@ -3366,6 +3365,34 @@ class SessionGenerationTabMixin:
                         boosted_categories + female_shift
                     ).round(1)
 
+        roster_spread_levels_reference = []
+        try:
+            roster_df = self.main_df.copy()
+            if female_shift != 0.0:
+                roster_female_mask = (
+                    roster_df["Gender"]
+                    .astype(str)
+                    .str.strip()
+                    .str.lower()
+                    .isin(["female", "f"])
+                )
+                if roster_female_mask.any():
+                    roster_df["Level"] = roster_df["Level"].astype(float)
+                    boosted_levels = pd.to_numeric(
+                        roster_df.loc[roster_female_mask, "Level"], errors="coerce"
+                    ).fillna(0)
+                    roster_df.loc[roster_female_mask, "Level"] = (
+                        boosted_levels + female_shift
+                    ).round(1)
+            roster_spread_levels_reference = (
+                pd.to_numeric(roster_df["Level"], errors="coerce")
+                .dropna()
+                .astype(float)
+                .tolist()
+            )
+        except Exception:
+            roster_spread_levels_reference = []
+
         sub_df["Happiness"] = 0
         sub_df["Games played"] = 0
 
@@ -3459,6 +3486,7 @@ class SessionGenerationTabMixin:
             print_progress=print_progress,
             female_shift=female_shift,
             player_round_availability=player_round_availability,
+            roster_spread_levels_reference=roster_spread_levels_reference,
         )
 
     def run_generation_with_progress(
@@ -3484,6 +3512,7 @@ class SessionGenerationTabMixin:
         print_progress=True,
         female_shift=0.0,
         player_round_availability=None,
+        roster_spread_levels_reference=None,
     ):
         """Run session generation with progress updates."""
         try:
@@ -3492,31 +3521,15 @@ class SessionGenerationTabMixin:
             print("Starting session generation...")
             print(f"Testing seeds {first_seed} to {last_seed}\n")
 
-            # Compute rounds_reordering once: internally generate level rounds first for
-            # better optimization, then reorder back to the user-intended display order.
-            generated_order_indices = sorted(
-                range(amount_of_rounds),
-                key=lambda idx: (
-                    session_generation_round_type_priority(type_preferences[idx]),
-                    idx,
-                ),
-            )
-            generated_pos_by_original_idx = {
-                original_idx: generated_pos + 1
-                for generated_pos, original_idx in enumerate(generated_order_indices)
-            }
-            rounds_reordering = [
-                generated_pos_by_original_idx[i] for i in range(amount_of_rounds)
-            ]
-
             session_of_rounds, chosen_seed = (
                 main_module.run_session_generation_with_seed_optimization(
                     df=sub_df,
                     amount_of_rounds=amount_of_rounds,
                     player_round_availability=player_round_availability,
+                    roster_spread_levels_reference=roster_spread_levels_reference,
                     type_preferences=type_preferences,
                     gender_preferences=gender_preferences,
-                    rounds_reordering=rounds_reordering,
+                    rounds_reordering=None,
                     level_gap_tol=level_gap_tol,
                     num_iter=num_iter,
                     lambda_weight=lambda_weight,
@@ -3533,6 +3546,7 @@ class SessionGenerationTabMixin:
                     games_per_round_each_round=games_per_round,
                     print_progress=print_progress,
                     progress_callback=progress_dialog.update_progress,
+                    prioritize_level_rounds=False,
                 )
             )
 
