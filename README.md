@@ -4,8 +4,8 @@ Roundnet Matchmaking builds balanced roundnet sessions: several rounds of 2 vs 2
 every player gets a fair share of games, partners and opponents, based on their level, gender and
 spectrum preferences.
 
-Version 2.0.0 is the first release where the full app is available both as a desktop application
-and as a web app backed by the same Python engine.
+Version 2.1.1 is the current release: desktop and web share the same Python engine, with
+compact JSON session history that tracks both editor swaps and games round reorders.
 
 The project ships two front ends on top of the same Python engine (`core/`):
 
@@ -23,18 +23,18 @@ The project ships two front ends on top of the same Python engine (`core/`):
   advanced knobs (`extra_parameters`).
 - Seed search with live progress and console output.
 - Games editor: swap players inside a round, live preview of each player's happiness change,
-  detailed happiness breakdown, undo, apply, score history with version restore.
+  detailed happiness breakdown, undo, apply, score history with version restore and forward-preserving rewind.
 - Session games view: reorder rounds, show levels, download the games image, the Excel files
   (editable and read-only), the session file and a text report.
 - Charts: happiness overview, spectrum analysis, team analysis (partnership and opponent networks).
+- Centralized gameplay configuration (`core/gameplay_config.py`) keeps spectrum names/defaults and trigger logic consistent across engine, web, and desktop UI.
 
-## Release highlights in 2.0.0
+## Release highlights in 2.1.1
 
-- Full web app with mobile-friendly workflows and Railway deployment support.
-- JSON session documents for portable, safer web session storage and reloads.
-- Better balanced-round search and multiple engine correctness fixes around histories,
-  post-processing, exports, and image generation.
-- CI coverage for both the Python backend and the web frontend build.
+- Compact `editor_and_games_history` in JSON session files with mixed operation replay (`player_swaps` + `round_reorder`).
+- Restore/reapply semantics improved: rewind keeps forward history, and reapply rewrites the branch deterministically.
+- Spectrum/gameplay parameters centralized under `core/gameplay_config.py` and reused across core, UI, loader, breakdown, and web analysis.
+- Existing web and desktop capabilities remain covered (generation, editing, reordering, exports, charts, deployment support).
 
 ## Player file format
 

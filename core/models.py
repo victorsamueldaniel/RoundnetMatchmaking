@@ -14,15 +14,12 @@ import datetime
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# Maps spectrum_game dict keys → Player attribute names
-_SPEC_KEY_TO_ATTR = {
-    "Prey": "prey",
-    "Equilibrist": "equilibrist",
-    "Challenger": "challenger",
-    "Chill": "chill",
-    "Hunter": "hunter",
-    "Classist": "classist",
-}
+from core.gameplay_config import (
+    SPEC_KEY_TO_ATTR as _SPEC_KEY_TO_ATTR,
+    SPECTRUM_NAMES,
+    compute_spectrum_game,
+    choose_best_spectrum,
+)
 
 
 def _cfg_get(cfg, path, default):
@@ -432,12 +429,8 @@ class Player:
         self.previous_happiness = self.happiness  # <-- Add this line
         self.relative_happiness = 0  # Will be calculated at end of session
 
-        self.prey = series.get("Prey", 0)
-        self.equilibrist = series.get("Equilibrist", 0)
-        self.challenger = series.get("Challenger", 0)
-        self.chill = series.get("Chill", 0)
-        self.hunter = series.get("Hunter", 0)
-        self.classist = series.get("Classist", 0)
+        for spec_name in SPECTRUM_NAMES:
+            setattr(self, _SPEC_KEY_TO_ATTR[spec_name], series.get(spec_name, 0))
         self.last_spec_chosen = None
         self.spec_chosen_history = []
 
@@ -491,70 +484,26 @@ class Player:
             teammates_mean_level = np.mean(teammates_levels)
             team_level = np.mean(teammates_levels + [self.level])
             opponents_mean_level = np.mean(opponents_levels)
-            # d is defined as teammate - opponent (team mean minus opponents mean)
-            d = team_level - opponents_mean_level
-            # challenger comparison uses a scaled opponents mean so compute adjusted delta
-            d_challenger = (
-                team_level
-                - spectrum_challenger_opponents_mean_level_multiplier
-                * opponents_mean_level
+            spectrum_game = compute_spectrum_game(
+                team_level=team_level,
+                opponents_mean_level=opponents_mean_level,
+                teammates_mean_level=teammates_mean_level,
+                roster_spread_R=roster_spread_R,
+                level_gap_tol=level_gap_tol,
+                players_chill=players_chill,
+                tuning={
+                    "prey_opponents_mean_level_multiplier": spectrum_prey_opponents_mean_level_multiplier,
+                    "challenger_opponents_mean_level_multiplier": spectrum_challenger_opponents_mean_level_multiplier,
+                    "equilibrist_roster_spread_ratio": 0.1,
+                    "challenger_roster_spread_ratio": 0.2,
+                    "equilibrist_fallback_gap_multiplier": spectrum_equilibrist_level_gap_tol_multiplier,
+                    "challenger_fallback_gap_multiplier": spectrum_challenger_level_gap_tol_multiplier,
+                    "classist_level_gap_tol_multiplier": spectrum_classist_level_gap_tol_multiplier,
+                    "chill_players_threshold": spectrum_chill_players_chill_threshold,
+                },
             )
-            # Compute teq and t_chlgr from roster spread R when available
-            R = None
-            try:
-                if roster_spread_R is not None:
-                    R = float(roster_spread_R)
-                    if not np.isfinite(R) or R <= 0:
-                        R = None
-            except Exception:
-                R = None
-            if R is not None:
-                t_eq = 0.1 * R
-                t_chlgr = 0.2 * R
-            else:
-                # Fallback when roster spread R is not available: derive thresholds from gap_tol
-                t_eq = spectrum_equilibrist_level_gap_tol_multiplier * level_gap_tol
-                t_chlgr = spectrum_challenger_level_gap_tol_multiplier * level_gap_tol
-
-            # Use explicit non-overlapping bands (half-open intervals) consistently
-            is_equilibrist = abs(d) < t_eq
-            is_prey = d <= -t_chlgr if t_chlgr is not None else False
-            is_hunter = d >= t_eq if t_eq is not None else False
-            is_challenger = (
-                ((-d) > t_eq and (-d) < t_chlgr) if t_chlgr is not None else False
-            )
-
-            spectrum_game = {
-                "Prey": 1 if is_prey else 0,
-                "Equilibrist": 1 if is_equilibrist else 0,
-                "Challenger": 1 if is_challenger else 0,
-                "Chill": (
-                    1 if players_chill >= spectrum_chill_players_chill_threshold else 0
-                ),
-                "Hunter": 1 if is_hunter else 0,
-                "Classist": (
-                    1
-                    if abs(self.level - teammates_mean_level)
-                    <= spectrum_classist_level_gap_tol_multiplier * level_gap_tol
-                    else 0
-                ),
-            }
-            best_gain = float("-inf")
-            specs_with_best_gain = []
-            # Sort specs to ensure consistent ordering
-            for spec in sorted(spectrum_game.keys()):
-                spec_gain = getattr(self, _SPEC_KEY_TO_ATTR[spec]) * spectrum_game[spec]
-                if spec_gain > best_gain:
-                    specs_with_best_gain = [spec]
-                    best_gain = spec_gain
-                elif spec_gain == best_gain:
-                    specs_with_best_gain.append(spec)
-
-            # If no positive gain exists, record no chosen spec (None)
-            if best_gain <= 0:
-                spec_chosen = None
-            else:
-                spec_chosen = specs_with_best_gain[0]
+            spec_chosen = choose_best_spectrum(self, spectrum_game)
+            if spec_chosen is not None:
                 self.happiness += (
                     getattr(self, _SPEC_KEY_TO_ATTR[spec_chosen])
                     * spectrum_game[spec_chosen]

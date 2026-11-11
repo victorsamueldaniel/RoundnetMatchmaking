@@ -4,6 +4,9 @@ A session document only stores inputs (players, parameters, preferred pairs)
 and the structure of each round (teams and bench, by player name). Happiness
 and every derived statistic are recomputed from that structure, so a document
 can be loaded without unpickling anything.
+
+Documents may also carry optional compact editor/games history metadata under
+``editor_and_games_history``. Documents without this field remain supported.
 """
 
 import numpy as np
@@ -21,7 +24,7 @@ from core.models import (
     normalize_preferred_pair_allowances,
 )
 
-DOCUMENT_VERSION = 2
+DOCUMENT_VERSION = 3
 
 PLAYER_FIELDS = [
     "Name",
@@ -118,7 +121,7 @@ def encode_session(session, players, params, preferred_pairs, seed=None):
                     if len(normalized) < len(rounds):
                         normalized.extend([True] * (len(rounds) - len(normalized)))
                     availability[player_id] = normalized
-    return {
+    document = {
         "version": DOCUMENT_VERSION,
         "seed": seed,
         "players": players,
@@ -128,6 +131,104 @@ def encode_session(session, players, params, preferred_pairs, seed=None):
             {"players": sorted(pair), "games": int(n)} for pair, n in preferred_pairs
         ],
         "rounds": rounds,
+    }
+    raw_history = getattr(session, "_editor_and_games_history", None)
+    editor_history = _encode_editor_and_games_history(raw_history)
+    if editor_history is not None:
+        document["editor_and_games_history"] = editor_history
+    return document
+
+
+def _normalize_swap_entry(entry):
+    if not isinstance(entry, dict):
+        return None
+    round_idx = entry.get("round_idx", entry.get("round"))
+    player1 = entry.get("player1_id", entry.get("a"))
+    player2 = entry.get("player2_id", entry.get("b"))
+    if (
+        not isinstance(round_idx, int)
+        or round_idx < 0
+        or not isinstance(player1, str)
+        or not isinstance(player2, str)
+    ):
+        return None
+    return {
+        "round_idx": int(round_idx),
+        "player1_id": player1,
+        "player2_id": player2,
+    }
+
+
+def _normalize_apply_entry(entry):
+    if not isinstance(entry, dict):
+        return None
+    score = entry.get("score")
+    try:
+        normalized_score = float(score) if score is not None else None
+    except (TypeError, ValueError):
+        normalized_score = None
+    has_order = isinstance(entry.get("order"), list)
+    kind = (
+        "round_reorder"
+        if entry.get("kind") == "round_reorder"
+        or (entry.get("kind") is None and has_order)
+        else "player_swaps"
+    )
+    normalized = {"kind": kind, "score": normalized_score}
+    if kind == "round_reorder":
+        raw_order = entry.get("order")
+        order = []
+        if isinstance(raw_order, list):
+            for value in raw_order:
+                if isinstance(value, int):
+                    order.append(int(value))
+        normalized["order"] = order
+    else:
+        raw_swaps = entry.get("swaps")
+        swaps = []
+        if isinstance(raw_swaps, list):
+            for swap in raw_swaps:
+                normalized_swap = _normalize_swap_entry(swap)
+                if normalized_swap is not None:
+                    swaps.append(normalized_swap)
+        normalized["swaps"] = swaps
+    return normalized
+
+
+def _encode_editor_and_games_history(raw_history):
+    if not isinstance(raw_history, dict):
+        return None
+
+    applies = []
+    raw_applies = raw_history.get("applies")
+    if isinstance(raw_applies, list):
+        for entry in raw_applies:
+            normalized = _normalize_apply_entry(entry if isinstance(entry, dict) else {})
+            if normalized is not None:
+                applies.append(normalized)
+
+    if not applies and not isinstance(raw_applies, list):
+        return None
+
+    initial_score = raw_history.get("initial_score")
+    try:
+        normalized_initial_score = (
+            float(initial_score) if initial_score is not None else None
+        )
+    except (TypeError, ValueError):
+        normalized_initial_score = None
+
+    current_index = raw_history.get("current_index")
+    try:
+        normalized_current_index = int(current_index)
+    except (TypeError, ValueError):
+        normalized_current_index = len(applies)
+    normalized_current_index = max(0, min(normalized_current_index, len(applies)))
+
+    return {
+        "initial_score": normalized_initial_score,
+        "applies": applies,
+        "current_index": normalized_current_index,
     }
 
 
@@ -273,6 +374,9 @@ def decode_session(doc):
         session.rounds.append(round_)
 
     recompute_session(session, _pairs_from_document(doc))
+    editor_history = _encode_editor_and_games_history(doc.get("editor_and_games_history"))
+    if editor_history is not None:
+        session._editor_and_games_history = editor_history
     return session
 
 

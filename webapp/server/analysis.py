@@ -10,10 +10,8 @@ from collections import defaultdict
 import networkx as nx
 import numpy as np
 
+from core.gameplay_config import SPECTRUM_ATTRS, SPECTRUM_NAMES
 from core.models import compute_session_score
-
-SPECTRUM_ATTRS = ["prey", "equilibrist", "challenger", "chill", "hunter", "classist"]
-SPECTRUM_NAMES = ["Prey", "Equilibrist", "Challenger", "Chill", "Hunter", "Classist"]
 
 
 def _f(value):

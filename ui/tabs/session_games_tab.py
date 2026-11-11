@@ -547,10 +547,32 @@ class SessionGamesTabMixin:
             print("=" * 80)
 
             # Reorder the rounds list on the live session object
+            applied_order = list(self._sg_round_order)
             old_rounds = list(self.session_of_rounds.rounds)
             self.session_of_rounds.rounds = [
                 old_rounds[orig_idx] for orig_idx in self._sg_round_order
             ]
+            if hasattr(self.session_of_rounds, "recalculate_session_statistics"):
+                self.session_of_rounds.recalculate_session_statistics()
+
+            try:
+                from core.models import (  # noqa: PLC0415
+                    compute_session_score as _compute_session_score,
+                )
+
+                _score = _compute_session_score(
+                    self.session_of_rounds.players,
+                    getattr(self, "_score_obj_name", None),
+                    getattr(self, "_score_lw", 2.4),
+                    getattr(self, "_score_pct", 10),
+                )
+                if hasattr(self, "_commit_score_history_operation"):
+                    self._commit_score_history_operation(
+                        {"kind": "round_reorder", "order": applied_order},
+                        _score,
+                    )
+            except Exception as e:
+                print(f"Warning: could not update score history for round reorder: {e}")
 
             # Reset swap state (will be re-initialised by show_session_games_tab)
             self._sg_has_pending_swaps = False

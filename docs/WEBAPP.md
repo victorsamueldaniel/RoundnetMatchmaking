@@ -4,7 +4,8 @@ The web app brings every feature of the desktop app to the browser, on a phone o
 Both apps call the same Python engine (`core/`) with the same parameters, so the matchmaking
 logic is shared; only the screens differ.
 
-This is the headline addition in version 2.0.0.
+This became the headline addition in version 2.0.0 and is now extended in 2.1.1
+with compact mixed editor+games history persistence.
 
 ## Run it locally
 
@@ -93,12 +94,24 @@ A session is saved as JSON instead of a pickle file:
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "seed": 3,
   "players": [{"id": "Alice", "Name": "Alice", "Level": 2.5, "Gender": "Female", "Prey": 5, "...": 5}],
   "availability": {"Alice": [true, true, false, true], "Bob": [true, true, true, true]},
   "params": {"lambda_weight": 2.0, "percentile": 33, "level_gap_tol": 0.7, "extra_parameters": {}},
   "preferred_pairs": [{"players": ["Alice", "Bob"], "games": 2}],
+  "editor_and_games_history": {
+    "initial_score": 31.42,
+    "applies": [
+      {
+        "kind": "player_swaps",
+        "score": 32.10,
+        "swaps": [{"round_idx": 0, "player1_id": "Alice", "player2_id": "Bob"}]
+      },
+      {"kind": "round_reorder", "score": 31.95, "order": [1, 0, 2, 3]}
+    ],
+    "current_index": 1
+  },
   "rounds": [
     {"type_preference": "balanced", "gender_preference": "open",
      "games": [{"team_a": ["Alice", "Bob"], "team_b": ["Chloe", "David"]}],
@@ -111,6 +124,9 @@ Only inputs and round structure are stored. Happiness, histories and statistics 
 from the structure in chronological order, which is also what the desktop app does after
 reordering rounds. `tests/test_session_codec.py` checks that a generated session reloads with
 exactly the same happiness for every player.
+When `editor_and_games_history` is present, applies are replayed in order across both editor swaps
+and session-games round reorders. Loading JSON without this key stays compatible and simply
+starts with no editor/games apply history.
 
 Availability is encoded in the same round order as the saved `rounds` array, so the Session tab
 matrix and Editor tab `not_available` data stay consistent after generation/reordering.

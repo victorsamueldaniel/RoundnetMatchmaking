@@ -17,6 +17,8 @@ import os
 import sys
 from difflib import SequenceMatcher
 
+from core.gameplay_config import SPECTRUM_NAMES
+
 # Compute absolute path to the xlsx/ directory regardless of CWD.
 if getattr(sys, "frozen", False):
     _xlsx_dir = os.path.join(os.path.dirname(sys.executable), "xlsx")
@@ -34,7 +36,7 @@ XLSX_CONFIG_PATH = os.path.join(_xlsx_dir, "xlsx_config.json")
 
 _DEFAULT_FILENAME = "players.xlsx"
 
-_SPEC_COLS = ["Prey", "Equilibrist", "Challenger", "Chill", "Hunter", "Classist"]
+_SPEC_COLS = list(SPECTRUM_NAMES)
 
 # Column aliases → canonical names (applied before any validation or loading).
 _COL_ALIASES = {
@@ -46,10 +48,10 @@ _COL_ALIASES = {
     "Genre": "Gender",
     "Niveau moyen": "Level",
     "Niveau": "Level",
-    "Masochiste": "Prey",
-    "Équilibré": "Equilibrist",
-    "Sadique": "Hunter",
-    "Alchimiste": "Classist",
+    "Masochiste": SPECTRUM_NAMES[0],
+    "Équilibré": SPECTRUM_NAMES[1],
+    "Sadique": SPECTRUM_NAMES[4],
+    "Alchimiste": SPECTRUM_NAMES[5],
 }
 
 # Required columns (canonical names, after alias rename).

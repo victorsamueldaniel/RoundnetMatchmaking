@@ -1,3 +1,14 @@
+# Version 2.1.1 — November 11, 2026
+## What's new?
+- **JSON session history is now compact and complete**: session files store editor + games applies in one ordered timeline (`editor_and_games_history`) so score-history buttons persist after reload.
+- **Editor + Games changes now replay in exact order**: player swaps and round reorders are tracked together, so mixed sequences restore correctly.
+- **Centralized gameplay parameters**: spectrum names/defaults/mapping and spectrum trigger logic are now defined in one shared module (`core/gameplay_config.py`) and reused by engine, UI, loader, breakdown, and web analysis.
+
+## Behavior updates
+- Restoring a previous Apply no longer deletes future history.
+- After restoring Apply `N`, the next pending action is Apply `N+1`.
+- Reapplying after rewind now replaces the next apply (branch rewrite) instead of creating an extra apply.
+
 # Version 2.1.0 — November 2, 2026
 ## What's new?
 - **Partial participation is now first-class** (desktop + web): set player IN/OUT by round, undo edits, and keep `Not available` separate from `Benched out`.

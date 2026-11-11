@@ -170,8 +170,6 @@ Covers: `test_iterations.py`, `test_post_processing.py`, `test_pickle.py`, `test
 ### Version bump
 Update `pyproject.toml` → `version = "X.Y.Z"` on every release.
 
-> ⚠️ Known drift: `pyproject.toml` is currently at `1.3.0` but `CHANGELOG.md` is at `1.6.0`. On the next release, align both.
-
 `ASK USER: Confirm the new version number for pyproject.toml, CHANGELOG.md, and CHANGELOG_SIMPLIFIED.md.`
 
 ### Changelog format

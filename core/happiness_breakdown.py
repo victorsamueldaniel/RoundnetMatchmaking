@@ -12,11 +12,8 @@ checks that the terms add up to the gain stored in happiness_gained_history.
 
 import numpy as np
 
-from core.models import (
-    _SPEC_KEY_TO_ATTR,
-    repeated_same_people_count,
-    same_teammate_penalty_applies,
-)
+from core.gameplay_config import SPEC_KEY_TO_ATTR, compute_spectrum_game
+from core.models import repeated_same_people_count, same_teammate_penalty_applies
 
 
 def _divisor(value):
@@ -49,83 +46,35 @@ def round_breakdown(round_obj, round_idx):
                 if round_obj.spectrum:
                     team_level = np.mean(teammates_levels + [player.level])
                     opp_mean = np.mean(opponents_levels)
-                    # d is teammate - opponent (team mean minus opponents mean)
-                    d = team_level - opp_mean
-                    d_challenger = team_level - (
-                        p["spectrum_challenger_opponents_mean_level_multiplier"]
-                        * opp_mean
+                    triggers = compute_spectrum_game(
+                        team_level=team_level,
+                        opponents_mean_level=opp_mean,
+                        teammates_mean_level=np.mean(teammates_levels),
+                        roster_spread_R=getattr(round_obj, "roster_spread_R", None),
+                        level_gap_tol=gap_tol,
+                        players_chill=sum(q.chill for q in team.players),
+                        tuning={
+                            "prey_opponents_mean_level_multiplier": p["spectrum_prey_opponents_mean_level_multiplier"],
+                            "challenger_opponents_mean_level_multiplier": p["spectrum_challenger_opponents_mean_level_multiplier"],
+                            "equilibrist_roster_spread_ratio": 0.1,
+                            "challenger_roster_spread_ratio": 0.2,
+                            "equilibrist_fallback_gap_multiplier": p["spectrum_equilibrist_level_gap_tol_multiplier"],
+                            "challenger_fallback_gap_multiplier": p["spectrum_challenger_level_gap_tol_multiplier"],
+                            "classist_level_gap_tol_multiplier": p["spectrum_classist_level_gap_tol_multiplier"],
+                            "chill_players_threshold": p["spectrum_chill_players_chill_threshold"],
+                        },
                     )
-
-                    # roster R if available from round
-                    R = getattr(round_obj, "roster_spread_R", None)
-                    try:
-                        R = (
-                            float(R)
-                            if R is not None and np.isfinite(R) and R > 0
-                            else None
-                        )
-                    except Exception:
-                        R = None
-
-                    if R is not None:
-                        t_eq = 0.1 * R
-                        t_chlgr = 0.2 * R
-                        is_equilibrist = abs(d) < t_eq
-                        is_prey = d <= -t_chlgr
-                        is_hunter = d >= t_eq
-                        # Challenger only within the band (user requested)
-                        is_challenger = (-d) > t_eq and (-d) < t_chlgr
-                        triggers = {
-                            "Prey": bool(is_prey),
-                            "Equilibrist": bool(is_equilibrist),
-                            "Challenger": bool(is_challenger),
-                            "Chill": sum(q.chill for q in team.players)
-                            >= p["spectrum_chill_players_chill_threshold"],
-                            "Hunter": bool(is_hunter),
-                            "Classist": abs(player.level - np.mean(teammates_levels))
-                            <= p["spectrum_classist_level_gap_tol_multiplier"]
-                            * gap_tol,
-                        }
-                    else:
-                        # Fallback thresholds derived from gap_tol
-                        t_eq = (
-                            p["spectrum_equilibrist_level_gap_tol_multiplier"] * gap_tol
-                        )
-                        t_chlgr = (
-                            p["spectrum_challenger_level_gap_tol_multiplier"] * gap_tol
-                        )
-                        is_equilibrist = abs(d) < t_eq
-                        is_prey = d <= -t_chlgr
-                        is_hunter = d >= t_eq
-                        is_challenger = (-d) > t_eq and (-d) < t_chlgr
-                        triggers = {
-                            "Prey": bool(is_prey)
-                            or (
-                                t_chlgr is None
-                                and p["spectrum_prey_opponents_mean_level_multiplier"]
-                                * opp_mean
-                                >= player.level
-                            ),
-                            "Equilibrist": bool(is_equilibrist),
-                            "Challenger": bool(is_challenger),
-                            "Chill": sum(q.chill for q in team.players)
-                            >= p["spectrum_chill_players_chill_threshold"],
-                            "Hunter": bool(is_hunter),
-                            "Classist": abs(player.level - np.mean(teammates_levels))
-                            <= p["spectrum_classist_level_gap_tol_multiplier"]
-                            * gap_tol,
-                        }
 
                     chosen = player.spec_chosen_history[round_idx]
                     gain = (
-                        getattr(player, _SPEC_KEY_TO_ATTR[chosen]) * triggers[chosen]
+                        getattr(player, SPEC_KEY_TO_ATTR[chosen]) * triggers[chosen]
                         if chosen
                         else 0
                     )
                     spectrum = {
                         "values": {
                             spec: float(getattr(player, attr))
-                            for spec, attr in _SPEC_KEY_TO_ATTR.items()
+                            for spec, attr in SPEC_KEY_TO_ATTR.items()
                         },
                         "triggered": {k: bool(v) for k, v in triggers.items()},
                         "chosen": chosen,

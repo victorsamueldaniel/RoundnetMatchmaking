@@ -124,6 +124,8 @@ export function EditorScreen() {
   const swaps = useStore((s) => s.pendingSwaps)
   const setSwaps = useStore((s) => s.setPendingSwaps)
   const history = useStore((s) => s.history)
+  const historyCurrentIndex = useStore((s) => s.historyCurrentIndex)
+  const historyOperations = useStore((s) => s.historyOperations)
   const commit = useStore((s) => s.commitSession)
   const restore = useStore((s) => s.restoreVersion)
   const [selection, setSelection] = useState<Slot[]>([])
@@ -157,6 +159,7 @@ export function EditorScreen() {
   const levels = useMemo(() => new Map(document.players.map((p) => [p.id, Number(p.Level)])), [document])
   const pairKeys = useMemo(() => new Set(document.preferred_pairs.map((p) => [...p.players].sort().join('|'))), [document])
   const pendingRounds = new Set(swaps.map((s) => s.round))
+  const nextHistoryOperation = historyCurrentIndex < historyOperations.length ? historyOperations[historyCurrentIndex] : null
   const maxGamesPerRound = useMemo(
     () => working.rounds.reduce((max, round) => Math.max(max, round.games.length), 0),
     [working.rounds],
@@ -433,7 +436,11 @@ export function EditorScreen() {
                 </p>
               </>
             ) : (
-              <p className="text-sm text-muted">No changes yet</p>
+              <p className="text-sm text-muted">
+                {nextHistoryOperation?.kind === 'round_reorder'
+                  ? 'Next pending apply is a round order change in the Games tab.'
+                  : 'No changes yet'}
+              </p>
             )}
             <div className="mt-3 flex flex-wrap gap-2">
               <Button disabled={!swaps.length} onClick={() => setSwaps(swaps.slice(0, -1))}>
@@ -451,7 +458,7 @@ export function EditorScreen() {
             <div className="flex flex-wrap gap-2">
               {history.map((entry, i) => {
                 const delta = i ? entry.score - history[i - 1].score : 0
-                const current = i === history.length - 1
+                const current = i === historyCurrentIndex
                 const tone = !i ? 'bg-[#BBBBBB] text-black' : delta > 0.009 ? 'bg-[#4CAF50]' : delta < -0.009 ? 'bg-[#E53935]' : 'bg-[#BBBBBB] text-black'
                 return (
                   <button

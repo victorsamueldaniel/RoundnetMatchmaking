@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { sessionPng, sessionReport, sessionXlsx, viewSession } from '../api'
 import { toast } from '../components/toast'
 import { Button, Card, Modal, Segmented } from '../components/ui'
@@ -73,15 +73,39 @@ export function GamesScreen() {
   const document = useStore((s) => s.document)!
   const commit = useStore((s) => s.commitSession)
   const pendingSwaps = useStore((s) => s.pendingSwaps)
+  const pendingRoundOrder = useStore((s) => s.pendingRoundOrder)
   const showLevels = useStore((s) => s.showLevels)
   const setShowLevels = useStore((s) => s.setShowLevels)
-  const [order, setOrder] = useState(() => document.rounds.map((_, i) => i))
+  const [order, setOrder] = useState(() => {
+    const fallback = document.rounds.map((_, i) => i)
+    if (
+      pendingRoundOrder
+      && pendingRoundOrder.length === fallback.length
+      && new Set(pendingRoundOrder).size === fallback.length
+    ) {
+      return pendingRoundOrder
+    }
+    return fallback
+  })
   const [picked, setPicked] = useState<number | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const levels = new Map(document.players.map((p) => [p.id, Number(p.Level)]))
   const identity = order.length === document.rounds.length ? order : document.rounds.map((_, i) => i)
   const outOfPlace = identity.filter((v, i) => v !== i).length
+
+  useEffect(() => {
+    const fallback = document.rounds.map((_, i) => i)
+    if (
+      pendingRoundOrder
+      && pendingRoundOrder.length === fallback.length
+      && new Set(pendingRoundOrder).size === fallback.length
+    ) {
+      setOrder([...pendingRoundOrder])
+      return
+    }
+    setOrder(fallback)
+  }, [document, pendingRoundOrder])
 
   const tap = (position: number) => {
     if (picked === null) setPicked(position)
@@ -100,7 +124,7 @@ export function GamesScreen() {
     try {
       const reordered = { ...document, rounds: identity.map((i) => document.rounds[i]) }
       const view = await viewSession(reordered)
-      commit(reordered, view, view.summary.score)
+      commit(reordered, view, view.summary.score, { kind: 'round_reorder', order: [...identity] })
       setOrder(reordered.rounds.map((_, i) => i))
       toast('success', `Round order applied: ${identity.map((i) => `R${i + 1}`).join(' → ')}`)
     } catch (e) {

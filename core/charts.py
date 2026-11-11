@@ -691,19 +691,13 @@ def plot_spectrum_analysis(
     if save_png and not os.path.exists(png_dir):
         os.makedirs(png_dir, exist_ok=True)
 
+    from core.gameplay_config import SPECTRUM_ATTRS, SPECTRUM_NAMES
+
     # Check if spectrum data is available
-    spectrum_attrs = [
-        "prey",
-        "equilibrist",
-        "challenger",
-        "chill",
-        "hunter",
-        "classist",
-    ]
     has_spectrum = any(
         hasattr(player, attr) and getattr(player, attr, 0) > 0
         for player in session_of_rounds.players
-        for attr in spectrum_attrs
+        for attr in SPECTRUM_ATTRS
     )
 
     if not has_spectrum:
@@ -717,22 +711,14 @@ def plot_spectrum_analysis(
     fig.delaxes(axes[0, 0])
 
     # Create radar chart for average spectrum values
-    spectrum_names = [
-        "Prey",
-        "Equilibrist",
-        "Challenger",
-        "Chill",
-        "Hunter",
-        "Classist",
-    ]
     spectrum_values = []
 
-    for attr in spectrum_attrs:
+    for attr in SPECTRUM_ATTRS:
         values = [getattr(player, attr, 0) for player in session_of_rounds.players]
         spectrum_values.append(np.mean(values))
 
     # Number of variables
-    N = len(spectrum_names)
+    N = len(SPECTRUM_NAMES)
 
     # Compute angle for each axis
     angles = [n / float(N) * 2 * np.pi for n in range(N)]
@@ -746,7 +732,7 @@ def plot_spectrum_analysis(
     ax1.plot(angles, spectrum_values, "o-", linewidth=2, color="blue", alpha=0.7)
     ax1.fill(angles, spectrum_values, alpha=0.25, color="blue")
     ax1.set_xticks(angles[:-1])
-    ax1.set_xticklabels(spectrum_names)
+    ax1.set_xticklabels(SPECTRUM_NAMES)
     ax1.set_title("Average Spectrum Profile", fontsize=12, fontweight="bold", pad=20)
 
     # 2. Spectrum vs Happiness
@@ -759,7 +745,7 @@ def plot_spectrum_analysis(
     for player in session_of_rounds.players:
         spectrum_scores = {
             name: getattr(player, attr, 0)
-            for name, attr in zip(spectrum_names, spectrum_attrs)
+            for name, attr in zip(SPECTRUM_NAMES, SPECTRUM_ATTRS)
         }
         dominant = (
             max(spectrum_scores, key=spectrum_scores.get)
@@ -843,7 +829,7 @@ def plot_spectrum_analysis(
     player_names = [player.name for player in session_of_rounds.players]
 
     for player in session_of_rounds.players:
-        player_spectrum = [getattr(player, attr, 0) for attr in spectrum_attrs]
+        player_spectrum = [getattr(player, attr, 0) for attr in SPECTRUM_ATTRS]
         spectrum_matrix.append(player_spectrum)
 
     spectrum_matrix = np.array(spectrum_matrix)
@@ -853,8 +839,8 @@ def plot_spectrum_analysis(
     ax4.set_title("Player Spectrum Profiles", fontsize=12, fontweight="bold")
     ax4.set_xlabel("Spectrum Types")
     ax4.set_ylabel("Players")
-    ax4.set_xticks(range(len(spectrum_names)))
-    ax4.set_xticklabels(spectrum_names, rotation=45)
+    ax4.set_xticks(range(len(SPECTRUM_NAMES)))
+    ax4.set_xticklabels(SPECTRUM_NAMES, rotation=45)
     ax4.set_yticks(range(len(player_names)))
     ax4.set_yticklabels(player_names, fontsize=8)
 
@@ -863,7 +849,7 @@ def plot_spectrum_analysis(
 
     # Add text annotations with dynamic color based on background darkness
     for i in range(len(player_names)):
-        for j in range(len(spectrum_names)):
+        for j in range(len(SPECTRUM_NAMES)):
             # Get the background color intensity (0-10 scale for YlOrRd colormap)
             value = spectrum_matrix[i, j]
             # Use white text if value > 5 (darker colors), black otherwise

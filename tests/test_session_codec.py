@@ -205,3 +205,89 @@ def test_roster_spread_can_use_full_roster_reference():
         abs(getattr(round_obj, "roster_spread_R", 0.0) - expected_spread) < 1e-9
         for round_obj in reloaded.rounds
     )
+
+
+def test_editor_and_games_history_round_trip_is_preserved():
+    players = _players(8)
+    session, seed = run_session_generation_with_seed_optimization(
+        players_dataframe(players),
+        amount_of_rounds=2,
+        type_preferences=["balanced", "level"],
+        gender_preferences=["open", "open"],
+        num_iter=20,
+        first_seed=0,
+        last_seed=0,
+        print_progress=False,
+    )
+    doc = encode_session(
+        session,
+        players,
+        {"num_iter": 20, "games_per_round": "auto"},
+        [],
+        seed=seed,
+    )
+
+    session._editor_and_games_history = {
+        "initial_score": 10.0,
+        "applies": [
+            {
+                "kind": "player_swaps",
+                "score": 11.0,
+                "swaps": [{"round_idx": 0, "player1_id": "P0", "player2_id": "P1"}],
+            },
+            {
+                "kind": "round_reorder",
+                "score": 10.5,
+                "order": [1, 0],
+            }
+        ],
+        "current_index": 1,
+    }
+    with_history = encode_session(
+        session,
+        players,
+        {"num_iter": 20, "games_per_round": "auto"},
+        [],
+        seed=seed,
+    )
+
+    assert "editor_and_games_history" in with_history
+    assert "base_document" not in with_history["editor_and_games_history"]
+    assert with_history["editor_and_games_history"]["current_index"] == 1
+    assert len(with_history["editor_and_games_history"]["applies"]) == 2
+    assert (
+        with_history["editor_and_games_history"]["applies"][0]["swaps"][0]["player1_id"]
+        == "P0"
+    )
+    assert with_history["editor_and_games_history"]["applies"][1]["kind"] == "round_reorder"
+    assert with_history["editor_and_games_history"]["applies"][1]["order"] == [1, 0]
+
+    reloaded = decode_session(with_history)
+    assert hasattr(reloaded, "_editor_and_games_history")
+    assert reloaded._editor_and_games_history["current_index"] == 1
+    assert len(reloaded._editor_and_games_history["applies"]) == 2
+
+
+def test_document_without_editor_and_games_history_stays_compatible():
+    players = _players(8)
+    session, seed = run_session_generation_with_seed_optimization(
+        players_dataframe(players),
+        amount_of_rounds=2,
+        type_preferences=["balanced", "level"],
+        gender_preferences=["open", "open"],
+        num_iter=20,
+        first_seed=0,
+        last_seed=0,
+        print_progress=False,
+    )
+    doc = encode_session(
+        session,
+        players,
+        {"num_iter": 20, "games_per_round": "auto"},
+        [],
+        seed=seed,
+    )
+    doc.pop("editor_and_games_history", None)
+
+    reloaded = decode_session(doc)
+    assert not hasattr(reloaded, "_editor_and_games_history")

@@ -39,6 +39,16 @@ export type SessionDocument = {
   }
   preferred_pairs: PreferredPair[]
   rounds: RoundDoc[]
+  editor_and_games_history?: {
+    initial_score: number
+    applies: {
+      kind?: 'player_swaps' | 'round_reorder'
+      score: number
+      swaps?: { round_idx: number; player1_id: string; player2_id: string }[]
+      order?: number[]
+    }[]
+    current_index: number
+  }
 }
 
 export type Breakdown = {

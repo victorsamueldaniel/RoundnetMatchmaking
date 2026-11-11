@@ -3,7 +3,7 @@
 This repository is source-first. Generated artifacts are excluded from version control
 and should be published through GitHub Releases.
 
-As of version 2.0.0, the repository also contains a separately deployable web app. This document
+As of version 2.x, the repository also contains a separately deployable web app. This document
 covers the desktop executable workflow; see `README.md` and `docs/WEBAPP.md` for the web stack.
 
 Builds are supported on **Windows**, **macOS (arm64 and x86_64)**, and **Linux**.
@@ -54,7 +54,7 @@ All four zips are uploaded automatically to the GitHub Release created by the ta
 
 ## Distribution Workflow
 
-1. Create and push a version tag: `git tag v2.0.0 && git push origin v2.0.0`.
+1. Create and push a version tag: `git tag v2.1.1 && git push origin v2.1.1`.
 2. GitHub Actions builds all four platform artifacts automatically.
 3. Zips appear as assets on the GitHub Release page.
 4. If you are releasing the web app publicly, publish or update the Railway deployment separately.

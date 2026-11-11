@@ -11,6 +11,7 @@ from ctypes import wintypes
 from PIL import Image, ImageTk
 import tkinter.font as tkfont
 
+from core.gameplay_config import SPECTRUM_DEFAULT_VALUES, SPECTRUM_NAMES
 from ui.functions.ui_helpers import (
     current_dir,
     set_window_icon_from_logo,
@@ -2584,14 +2585,7 @@ class SessionGenerationTabMixin:
         ).grid(row=5, column=1, pady=3, padx=10)
 
         # Spectrum spinboxes
-        spectrum_names = [
-            "Prey",
-            "Equilibrist",
-            "Challenger",
-            "Chill",
-            "Hunter",
-            "Classist",
-        ]
+        spectrum_names = list(SPECTRUM_NAMES)
         spectrum_frame = tk.Frame(form_frame, bg=self.colors["bg_light"])
         spectrum_frame.grid(row=6, column=0, columnspan=2, pady=5)
         spectrum_vars = {}
@@ -2610,11 +2604,12 @@ class SessionGenerationTabMixin:
             ).pack(side=tk.LEFT)
             if edit_mode:
                 try:
-                    init_spec = int(player_data.get(spec_name, 5))
+                    default_spec_value = SPECTRUM_DEFAULT_VALUES.get(spec_name, 5)
+                    init_spec = int(player_data.get(spec_name, default_spec_value))
                 except (TypeError, ValueError):
-                    init_spec = 5
+                    init_spec = SPECTRUM_DEFAULT_VALUES.get(spec_name, 5)
             else:
-                init_spec = 5
+                init_spec = SPECTRUM_DEFAULT_VALUES.get(spec_name, 5)
             var = tk.IntVar(value=init_spec)
             spectrum_vars[spec_name] = var
             tk.Spinbox(
@@ -2724,12 +2719,7 @@ class SessionGenerationTabMixin:
                     gender=gender_var.get(),
                     level=level_var.get(),
                     happiness=happiness_var.get(),
-                    prey=spectrum_vars["Prey"].get(),
-                    equilibrist=spectrum_vars["Equilibrist"].get(),
-                    challenger=spectrum_vars["Challenger"].get(),
-                    chill=spectrum_vars["Chill"].get(),
-                    hunter=spectrum_vars["Hunter"].get(),
-                    classist=spectrum_vars["Classist"].get(),
+                    **{spec_name: int(spectrum_vars[spec_name].get()) for spec_name in spectrum_names},
                 )
                 dialog.destroy()
 
@@ -2757,12 +2747,7 @@ class SessionGenerationTabMixin:
         gender,
         level,
         happiness,
-        prey,
-        equilibrist,
-        challenger,
-        chill,
-        hunter,
-        classist,
+        **spectrum_values,
     ):
         """Add a new player to the main dataframe and update UI"""
         # Create a new player series
@@ -2775,13 +2760,9 @@ class SessionGenerationTabMixin:
             "Games played": 0,
             "Noisy level": 0,
             "Category": float(level),
-            "Prey": int(prey),
-            "Equilibrist": int(equilibrist),
-            "Challenger": int(challenger),
-            "Chill": int(chill),
-            "Hunter": int(hunter),
-            "Classist": int(classist),
         }
+        for spec_name in SPECTRUM_NAMES:
+            new_player_data[spec_name] = int(spectrum_values.get(spec_name, SPECTRUM_DEFAULT_VALUES.get(spec_name, 5)))
 
         # Add to main_df - drop any existing player with same name first to avoid duplicates
         import pandas as pd  # noqa: PLC0415

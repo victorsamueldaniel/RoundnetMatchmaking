@@ -1,6 +1,21 @@
 # Changelog
 All notable changes to this project are documented in this file.
 
+## [2.1.1] - 2026-11-11
+### Added
+- Compact `editor_and_games_history` persistence in JSON sessions, storing ordered apply operations (`player_swaps` and `round_reorder`) so score-history chips survive save/load on both desktop and web.
+- Central gameplay-parameter module `core/gameplay_config.py` as the single source of truth for spectrum names, defaults, mapping, and spectrum trigger computation (`compute_spectrum_game` / `choose_best_spectrum`).
+
+### Changed
+- Editor/Games history now behaves as one timeline: restoring Apply `N` preserves forward history and preloads exactly operation `N+1` as pending.
+- Reapply after rewind now rewrites the branch (replace next apply + drop future applies) instead of creating a divergent extra apply.
+- Spectrum constants and tuning are now imported from `core/gameplay_config.py` in core engine, UI player editing, data loading aliases/defaults, happiness breakdown, and web analysis.
+
+### Fixed
+- Round-reorder restore now correctly inverts permutations when navigating backward in history.
+- Mixed operation order is now deterministic and replay-safe (`player swap -> round reorder` is distinct from `round reorder -> player swap`).
+- Loading JSON sessions without `editor_and_games_history` remains compatible (session loads normally without editor/games history state).
+
 ## [2.1.0] - 2026-11-02
 ### Added
 - Partial participation workflow across desktop and web: per-round player availability editing (IN/OUT) with undo, plus separate `not_available` vs `benched out` tracking in generated rounds.

@@ -413,29 +413,25 @@ class GamesEditorTabMixin:
         _initial_score = _compute_session_score(
             self.session_of_rounds.players, _sess_obj_name, _sess_lw, _sess_pct
         )
-        # Find the baseline pkl path so score chips can link back to the saved file
-        _initial_pkl = getattr(self, "_loaded_pkl_path", None)
-        if hasattr(self, "_loaded_pkl_path"):
-            del self._loaded_pkl_path
-        if _initial_pkl is None:
-            _sf_init = getattr(self, "_active_session_folder", None)
-            if _sf_init and os.path.exists(_sf_init):
-                import re as _re_init  # noqa: PLC0415
-
-                _base_pkls = sorted(
-                    f
-                    for f in os.listdir(_sf_init)
-                    if f.endswith(".pkl")
-                    and not _re_init.search(r"_v\d+\.pkl$", f)
-                    and "_modified" not in f
-                )
-                if _base_pkls:
-                    _initial_pkl = os.path.join(_sf_init, _base_pkls[0])
-        self.score_history = [(_initial_score, _initial_pkl)]
-        # Restore previous history if a version-restore operation is in progress
-        if hasattr(self, "_pending_restore_history"):
-            self.score_history = self._pending_restore_history
-            del self._pending_restore_history
+        (
+            self._score_history_source_document,
+            self._score_history_source_index,
+            self._score_history_initial_score,
+            self._score_history_applies,
+            self.score_history,
+        ) = self._score_history_compact_state_from_source(_initial_score)
+        self.score_history_current_idx = self._score_history_source_index
+        self.pending_changes = self._next_pending_changes_for_history_index(
+            self.score_history_current_idx
+        )
+        self.swap_history = []
+        self._sync_score_history_to_session()
+        if self.pending_changes:
+            self.update_changes_display()
+            self.status_label.config(
+                text=f"{len(self.pending_changes)} change(s) pending - Click Apply to recalculate happiness",
+                fg=self.colors["accent_yellow"],
+            )
         # Store objective metadata for post-apply reuse; do NOT use live slider values
         # so the score stays tied to the generated session regardless of UI changes.
         self._score_obj_name = _sess_obj_name
@@ -1023,6 +1019,386 @@ class GamesEditorTabMixin:
         Negative deltas also return a text suffix like '[−2.0]'.
         """
         return games_editor_delta_to_bg(delta)
+
+    def _score_history_base_document_from_session(self):
+        from core.session_codec import encode_session  # noqa: PLC0415
+
+        preferred_pairs = []
+        for pair, games in getattr(self, "preferred_pairs", []):
+            preferred_pairs.append((frozenset(pair), int(games)))
+        document = encode_session(
+            self.session_of_rounds,
+            self._score_history_players_payload(),
+            self._score_history_params_payload(),
+            preferred_pairs,
+            seed=getattr(self, "chosen_seed", None),
+        )
+        document.pop("editor_and_games_history", None)
+        return document
+
+    def _normalize_swap_for_history(self, swap):
+        if not isinstance(swap, dict):
+            return None
+        round_idx = swap.get("round_idx", swap.get("round"))
+        player1 = swap.get("player1_id", swap.get("a"))
+        player2 = swap.get("player2_id", swap.get("b"))
+        if (
+            not isinstance(round_idx, int)
+            or round_idx < 0
+            or not isinstance(player1, str)
+            or not isinstance(player2, str)
+        ):
+            return None
+        return {
+            "round_idx": int(round_idx),
+            "player1_id": player1,
+            "player2_id": player2,
+        }
+
+    def _normalize_apply_for_history(self, entry):
+        if not isinstance(entry, dict):
+            return None
+        score = entry.get("score")
+        try:
+            normalized_score = float(score) if score is not None else None
+        except (TypeError, ValueError):
+            normalized_score = None
+        has_order = isinstance(entry.get("order"), list)
+        kind = (
+            "round_reorder"
+            if entry.get("kind") == "round_reorder"
+            or (entry.get("kind") is None and has_order)
+            else "player_swaps"
+        )
+        normalized = {"kind": kind, "score": normalized_score}
+        if kind == "round_reorder":
+            order = []
+            for value in (
+                entry.get("order", []) if isinstance(entry.get("order"), list) else []
+            ):
+                if isinstance(value, int):
+                    order.append(int(value))
+            normalized["order"] = order
+        else:
+            swaps = []
+            for raw_swap in (
+                entry.get("swaps", []) if isinstance(entry.get("swaps"), list) else []
+            ):
+                normalized_swap = self._normalize_swap_for_history(raw_swap)
+                if normalized_swap is not None:
+                    swaps.append(normalized_swap)
+            normalized["swaps"] = swaps
+        return normalized
+
+    def _score_history_entries_from_compact(self, initial_score, applies):
+        entries = [{"score": float(initial_score if initial_score is not None else 0.0)}]
+        for apply in applies:
+            score = apply.get("score")
+            entries.append({"score": float(score if score is not None else 0.0)})
+        return entries
+
+    def _score_history_compact_state_from_source(self, fallback_initial_score):
+        source = None
+        if hasattr(self, "_pending_restore_history_data"):
+            source = self._pending_restore_history_data
+            del self._pending_restore_history_data
+        elif hasattr(self.session_of_rounds, "_editor_and_games_history"):
+            source = getattr(self.session_of_rounds, "_editor_and_games_history")
+
+        source_document = self._score_history_base_document_from_session()
+        initial_score = float(fallback_initial_score)
+        applies = []
+        source_index = 0
+
+        if isinstance(source, dict):
+            try:
+                source_initial = source.get("initial_score")
+                if source_initial is not None:
+                    initial_score = float(source_initial)
+            except (TypeError, ValueError):
+                pass
+            raw_applies = source.get("applies")
+            if isinstance(raw_applies, list):
+                for raw_apply in raw_applies:
+                    normalized = self._normalize_apply_for_history(raw_apply)
+                    if normalized is not None:
+                        applies.append(normalized)
+            try:
+                source_index = int(source.get("current_index", len(applies)))
+            except (TypeError, ValueError):
+                source_index = len(applies)
+
+        source_index = max(0, min(source_index, len(applies)))
+        score_history = self._score_history_entries_from_compact(initial_score, applies)
+        return source_document, source_index, initial_score, applies, score_history
+
+    def _next_pending_changes_for_history_index(self, current_index):
+        if current_index < 0 or current_index >= len(getattr(self, "_score_history_applies", [])):
+            return []
+        changes = []
+        apply = self._score_history_applies[current_index]
+        if apply.get("kind") == "round_reorder":
+            return []
+        for swap in apply.get("swaps", []):
+            changes.append(
+                {
+                    "round_idx": swap["round_idx"],
+                    "player1": swap["player1_id"],
+                    "player2": swap["player2_id"],
+                }
+            )
+        return changes
+
+    def _sync_score_history_to_session(self):
+        if not hasattr(self, "session_of_rounds") or self.session_of_rounds is None:
+            return
+        current_index = getattr(self, "score_history_current_idx", 0)
+        current_index = max(0, min(current_index, len(getattr(self, "_score_history_applies", []))))
+        payload = {
+            "initial_score": getattr(self, "_score_history_initial_score", None),
+            "applies": list(getattr(self, "_score_history_applies", [])),
+            "current_index": current_index,
+        }
+        self.session_of_rounds._editor_and_games_history = payload
+
+    def _commit_score_history_operation(self, operation, score):
+        if not hasattr(self, "score_history"):
+            return
+        if not isinstance(operation, dict):
+            return
+        normalized = self._normalize_apply_for_history(
+            {
+                "kind": operation.get("kind"),
+                "score": score,
+                "swaps": operation.get("swaps", []),
+                "order": operation.get("order", []),
+            }
+        )
+        if normalized is None:
+            return
+
+        if hasattr(self, "_history_rewrite_idx"):
+            current_idx = int(getattr(self, "_history_rewrite_idx"))
+            del self._history_rewrite_idx
+        else:
+            current_idx = getattr(self, "score_history_current_idx", 0)
+
+        current_idx = max(0, min(current_idx, len(self._score_history_applies)))
+        if current_idx < len(self._score_history_applies):
+            self._score_history_applies[current_idx] = normalized
+            self._score_history_applies = self._score_history_applies[: current_idx + 1]
+        else:
+            self._score_history_applies.append(normalized)
+
+        self.score_history_current_idx = min(
+            current_idx + 1, len(self._score_history_applies)
+        )
+        self.score_history = self._score_history_entries_from_compact(
+            self._score_history_initial_score,
+            self._score_history_applies,
+        )
+        self._score_history_source_document = self._score_history_base_document_from_session()
+        self._score_history_source_index = self.score_history_current_idx
+        self._sync_score_history_to_session()
+
+    def _score_history_players_payload(self):
+        players = []
+        for player in self.session_of_rounds.players:
+            players.append(
+                {
+                    "id": player.name,
+                    "Name": player.name,
+                    "Surname": getattr(player, "surname", ""),
+                    "Level": float(player.level),
+                    "Gender": player.gender,
+                    "Prey": int(player.prey),
+                    "Equilibrist": int(player.equilibrist),
+                    "Challenger": int(player.challenger),
+                    "Chill": int(player.chill),
+                    "Hunter": int(player.hunter),
+                    "Classist": int(player.classist),
+                }
+            )
+        return players
+
+    def _score_history_params_payload(self):
+        return {
+            "level_gap_tol": float(getattr(self.session_of_rounds, "level_gap_tol", 0.7)),
+            "games_per_round": getattr(
+                self.session_of_rounds, "_games_per_round_preference", "auto"
+            ),
+            "num_iter": int(getattr(self.session_of_rounds, "num_iter", 435)),
+            "lambda_weight": float(
+                getattr(
+                    self.session_of_rounds,
+                    "_objective_lambda_weight",
+                    getattr(self, "_score_lw", 2.4),
+                )
+            ),
+            "percentile": int(
+                getattr(
+                    self.session_of_rounds,
+                    "_objective_percentile",
+                    getattr(self, "_score_pct", 10),
+                )
+            ),
+            "weight_same_teammate": getattr(
+                self.session_of_rounds, "weight_same_teammate", 5
+            ),
+            "never_met_bonus_per_player": getattr(
+                self.session_of_rounds, "never_met_bonus_per_player", 2
+            ),
+            "never_met_bonus_cap": getattr(
+                self.session_of_rounds, "never_met_bonus_cap", 4
+            ),
+            "spectrum": bool(getattr(self.session_of_rounds, "spectrum", True)),
+            "extra_parameters": getattr(self.session_of_rounds, "extra_parameters", {})
+            or {},
+            "rounds_reordering": getattr(self.session_of_rounds, "rounds_reordering", None),
+        }
+
+    def _swap_batch_from_pending_changes(self):
+        swaps = []
+        for change in getattr(self, "pending_changes", []):
+            round_idx = change.get("round_idx")
+            player1 = change.get("player1")
+            player2 = change.get("player2")
+            if (
+                isinstance(round_idx, int)
+                and round_idx >= 0
+                and isinstance(player1, str)
+                and isinstance(player2, str)
+            ):
+                swaps.append(
+                    {
+                        "round_idx": round_idx,
+                        "player1_id": player1,
+                        "player2_id": player2,
+                    }
+                )
+        return swaps
+
+    def _apply_swap_batch_to_session(self, session, swaps):
+        by_name = {player.name: player for player in session.players}
+        modified_rounds = set()
+        for swap in swaps:
+            round_idx = swap.get("round_idx")
+            if not isinstance(round_idx, int) or round_idx >= len(session.rounds):
+                continue
+            player1 = by_name.get(swap.get("player1_id"))
+            player2 = by_name.get(swap.get("player2_id"))
+            if player1 is None or player2 is None:
+                continue
+            game_round = session.rounds[round_idx]
+            pos1 = game_round.find_player_position(player1)
+            pos2 = game_round.find_player_position(player2)
+            if pos1 and pos2:
+                game_round.swap_player_positions(pos1, pos2)
+                modified_rounds.add(round_idx)
+        if not modified_rounds:
+            return
+
+        if hasattr(session, "apply_changes_to_rounds"):
+            session.apply_changes_to_rounds(sorted(modified_rounds))
+        else:
+            for round_idx in sorted(modified_rounds):
+                session.rounds[round_idx].recalculate_happiness(round_idx=round_idx)
+            session.recalculate_session_statistics()
+
+        if (
+            getattr(self, "preferred_pairs", None)
+            and hasattr(session, "_pair_happiness_per_round")
+            and main_module is not None
+        ):
+            per_round_awards = session._pair_happiness_per_round
+            for player in session.players:
+                player.happiness -= sum(per_round_awards.get(player.name, []))
+            main_module.apply_preferred_pairs_happiness(session, self.preferred_pairs)
+
+    def _apply_round_reorder_to_session(self, session, order, reverse=False):
+        if not isinstance(order, list) or len(order) != len(session.rounds):
+            return
+        normalized = []
+        for value in order:
+            if not isinstance(value, int) or value < 0 or value >= len(session.rounds):
+                return
+            normalized.append(int(value))
+        if len(set(normalized)) != len(session.rounds):
+            return
+        if reverse:
+            # Forward order is new index -> previous index. Restoring backward
+            # requires the inverse mapping (previous index -> new index).
+            inverse = [0] * len(normalized)
+            for next_idx, previous_idx in enumerate(normalized):
+                inverse[previous_idx] = next_idx
+            normalized = inverse
+        old_rounds = list(session.rounds)
+        session.rounds = [old_rounds[idx] for idx in normalized]
+        if hasattr(session, "recalculate_session_statistics"):
+            session.recalculate_session_statistics()
+
+    def _apply_history_entry_to_session(self, session, apply_entry, reverse=False):
+        if not isinstance(apply_entry, dict):
+            return
+        if apply_entry.get("kind") == "round_reorder":
+            self._apply_round_reorder_to_session(
+                session, apply_entry.get("order", []), reverse=reverse
+            )
+            return
+        self._apply_swap_batch_to_session(session, apply_entry.get("swaps", []))
+
+    def _session_from_score_history_index(self, history_index):
+        from core.session_codec import decode_session  # noqa: PLC0415
+
+        session = decode_session(self._score_history_source_document)
+        source_index = getattr(self, "_score_history_source_index", 0)
+        source_index = max(0, min(source_index, len(self._score_history_applies)))
+        if history_index > source_index:
+            for idx in range(source_index, history_index):
+                self._apply_history_entry_to_session(
+                    session, self._score_history_applies[idx], reverse=False
+                )
+        elif history_index < source_index:
+            for idx in range(source_index - 1, history_index - 1, -1):
+                self._apply_history_entry_to_session(
+                    session, self._score_history_applies[idx], reverse=True
+                )
+        return session
+
+    def _restore_score_history_index(self, history_index):
+        if not hasattr(self, "score_history") or not self.score_history:
+            return
+        if history_index < 0 or history_index >= len(self.score_history):
+            return
+
+        try:
+            session = self._session_from_score_history_index(history_index)
+
+            if not getattr(session, "_objective_function_name", None):
+                session._objective_function_name = "mean_min_max_happiness_objective"
+            if getattr(session, "_objective_lambda_weight", None) is None:
+                session._objective_lambda_weight = 2.4
+            if getattr(session, "_objective_percentile", None) is None:
+                session._objective_percentile = 10
+
+            self.session_of_rounds = session
+            self._pending_restore_history_data = {
+                "initial_score": self._score_history_initial_score,
+                "applies": list(self._score_history_applies),
+                "current_index": history_index,
+            }
+            self._history_rewrite_idx = history_index
+            self.show_games_editor()
+            print(f"\nSession restored from score history item #{history_index}.")
+
+        except Exception as e:
+            import traceback  # noqa: PLC0415
+
+            print(f"Error restoring session version: {e}")
+            traceback.print_exc()
+            messagebox.showerror(
+                "Restore failed", f"Could not restore session:\n\n{str(e)}"
+            )
 
     def _preview_happiness_deltas(self, start_round_idx=None):
         """Simulate recalculation from start_round_idx through later rounds.
@@ -1880,9 +2256,16 @@ class GamesEditorTabMixin:
         RED = "#E53935"
         GRAY = "#BBBBBB"
 
-        last_idx = len(self.score_history) - 1
+        current_idx = getattr(self, "score_history_current_idx", len(self.score_history) - 1)
+        current_idx = max(0, min(current_idx, len(self.score_history) - 1))
         for i, entry in enumerate(self.score_history):
-            score, pkl_path = entry if isinstance(entry, tuple) else (entry, None)
+            if isinstance(entry, dict):
+                score = entry.get("score")
+            elif isinstance(entry, tuple):
+                score = entry[0] if entry else None
+            else:
+                score = entry
+            score = float(score) if score is not None else 0.0
 
             # Determine colour relative to previous entry
             if i == 0:
@@ -1891,7 +2274,13 @@ class GamesEditorTabMixin:
                 arrow = ""
             else:
                 prev_entry = self.score_history[i - 1]
-                prev = prev_entry[0] if isinstance(prev_entry, tuple) else prev_entry
+                if isinstance(prev_entry, dict):
+                    prev = prev_entry.get("score")
+                elif isinstance(prev_entry, tuple):
+                    prev = prev_entry[0] if prev_entry else None
+                else:
+                    prev = prev_entry
+                prev = float(prev) if prev is not None else 0.0
                 delta = score - prev
                 if delta > 0.009:
                     box_color = GREEN
@@ -1904,7 +2293,7 @@ class GamesEditorTabMixin:
                     arrow = "  ≈ 0"
                 label_text = f"Swap {i}"
 
-            is_current = i == last_idx
+            is_current = i == current_idx
             cell = tk.Frame(
                 self.score_history_container,
                 bg=box_color,
@@ -1953,8 +2342,8 @@ class GamesEditorTabMixin:
                 lbl_arrow.pack()
 
             # Make non-current chips clickable to restore that session version
-            if not is_current and pkl_path:
-                _handler = lambda e, p=pkl_path: self._restore_session_version(p)
+            if not is_current:
+                _handler = lambda e, idx=i: self._restore_score_history_index(idx)
                 targets = (cell, lbl_top, lbl_score) + (
                     (lbl_arrow,) if lbl_arrow else ()
                 )
@@ -1963,47 +2352,17 @@ class GamesEditorTabMixin:
                     widget.bind("<Button-1>", _handler)
 
     def _restore_session_version(self, pkl_path):
-        """Restore the editor to a previously saved session version."""
-        if not pkl_path or not os.path.exists(pkl_path):
-            messagebox.showerror(
-                "Restore failed", f"Snapshot file not found:\n{pkl_path}"
-            )
-            return
-
-        from core.pickle_helper import load_session  # noqa: PLC0415
-
-        try:
-            session = load_session(pkl_path)
-
-            # Stamp objective metadata if absent (legacy pkls)
-            if not getattr(session, "_objective_function_name", None):
-                session._objective_function_name = "mean_min_max_happiness_objective"
-            if getattr(session, "_objective_lambda_weight", None) is None:
-                session._objective_lambda_weight = 2.4
-            if getattr(session, "_objective_percentile", None) is None:
-                session._objective_percentile = 10
-
-            self.session_of_rounds = session
-
-            # Truncate history to this restore point and preserve it across editor rebuild
-            for idx, entry in enumerate(self.score_history):
-                _, path = entry if isinstance(entry, tuple) else (entry, None)
-                if path == pkl_path:
-                    self._pending_restore_history = self.score_history[: idx + 1]
-                    break
-
-            # Rebuild editor with restored session state
-            self.show_games_editor()
-            print(f"\nSession restored from: {os.path.basename(pkl_path)}")
-
-        except Exception as e:
-            import traceback  # noqa: PLC0415
-
-            print(f"Error restoring session version: {e}")
-            traceback.print_exc()
-            messagebox.showerror(
-                "Restore failed", f"Could not restore session:\n\n{str(e)}"
-            )
+        """Restore by path for legacy callers, preserving full score-history list."""
+        for idx, entry in enumerate(getattr(self, "score_history", [])):
+            entry_path = None
+            if isinstance(entry, dict):
+                entry_path = entry.get("pkl_path")
+            elif isinstance(entry, tuple) and len(entry) > 1:
+                entry_path = entry[1]
+            if entry_path == pkl_path:
+                self._restore_score_history_index(idx)
+                return
+        messagebox.showerror("Restore failed", f"Snapshot file not found:\n{pkl_path}")
 
     def update_changes_display(self):
         """Update the visual display of pending changes"""
@@ -2038,11 +2397,19 @@ class GamesEditorTabMixin:
             preview_score = self._pending_changes_preview_score()
             current_score = None
             if hasattr(self, "score_history") and self.score_history:
-                _current_entry = self.score_history[-1]
+                _current_idx = getattr(
+                    self, "score_history_current_idx", len(self.score_history) - 1
+                )
+                _current_idx = max(0, min(_current_idx, len(self.score_history) - 1))
+                _current_entry = self.score_history[_current_idx]
                 current_score = (
-                    _current_entry[0]
-                    if isinstance(_current_entry, tuple)
-                    else _current_entry
+                    _current_entry.get("score")
+                    if isinstance(_current_entry, dict)
+                    else (
+                        _current_entry[0]
+                        if isinstance(_current_entry, tuple)
+                        else _current_entry
+                    )
                 )
             score_delta = (
                 (preview_score - current_score)
@@ -2203,6 +2570,8 @@ class GamesEditorTabMixin:
                 self.session_of_rounds, self.preferred_pairs
             )
 
+        applied_swap_batch = self._swap_batch_from_pending_changes()
+
         # Clear pending changes and swap history
         num_changes = len(self.pending_changes)
         self.pending_changes.clear()
@@ -2291,8 +2660,10 @@ class GamesEditorTabMixin:
                 getattr(self, "_score_lw", 2.4),
                 getattr(self, "_score_pct", 10),
             )
-            if hasattr(self, "score_history"):
-                self.score_history.append((_new_score, _versioned_pkl_for_hist))
+            self._commit_score_history_operation(
+                {"kind": "player_swaps", "swaps": applied_swap_batch},
+                _new_score,
+            )
             self._render_score_history()
         except Exception:
             pass
